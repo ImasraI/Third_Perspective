@@ -1,0 +1,26 @@
+{
+  "name": "Goal Tracker",
+  "short_name": "Goal",
+  "description": "Personal daily tracker for calories, workouts, study, and expenses",
+  "id": "goal-tracker",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#090D16",
+  "theme_color": "#090D16",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='40' fill='%23090D16'/><circle cx='96' cy='96' r='60' fill='none' stroke='%23FF5722' stroke-width='16'/><circle cx='96' cy='96' r='40' fill='none' stroke='%2300E5FF' stroke-width='12'/><circle cx='96' cy='96' r='24' fill='none' stroke='%238B5CF6' stroke-width='8'/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='100' fill='%23090D16'/><circle cx='256' cy='256' r='160' fill='none' stroke='%23FF5722' stroke-width='36'/><circle cx='256' cy='256' r='110' fill='none' stroke='%2300E5FF' stroke-width='28'/><circle cx='256' cy='256' r='65' fill='none' stroke='%238B5CF6' stroke-width='20'/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
