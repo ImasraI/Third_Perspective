@@ -1,5 +1,5 @@
 /* ============================================================================
-   Goal Tracker - PWA client
+   ThirdPerspective - PWA client
    Talks to the Apps Script JSON API. No secrets live in this file.
    ========================================================================== */
 
@@ -141,6 +141,11 @@ function renderRings(d) {
   setRing('#ring-calorie', 82, n.calories, g.calories);
   setRing('#ring-protein', 64, n.protein, g.protein);
   setRing('#ring-budget', 46, e.todayTotal, Math.max(1, e.monthBudget / 30));
+
+  // Update ring colors to match new branding
+  $('#ring-calorie').style.color = 'rgba(34, 211, 238, 0.6)';
+  $('#ring-protein').style.color = 'rgba(168, 85, 247, 0.6)';
+  $('#ring-budget').style.color = 'rgba(245, 158, 11, 0.6)';
 }
 
 function renderMetrics(d) {
@@ -167,7 +172,7 @@ function renderTodayFoods(d) {
         <div class="text-sm font-semibold text-slate-100 truncate">${esc(x.food)}</div>
         <div class="text-[11px] text-slate-500 font-mono">${esc(x.qty)} ${esc(x.unit)} · P ${x.protein} C ${x.carbs} F ${x.fat}</div>
       </div>
-      <span class="font-mono text-sm font-bold text-brand-orange">${fmt(x.calories)}</span>
+      <span class="font-mono text-sm font-bold text-cyan-400">${fmt(x.calories)}</span>
       ${rowDelete('Nutrition', x.rowId)}
     </div>`).join('');
 }
@@ -182,7 +187,7 @@ function renderFoodLog(d) {
         <div class="text-sm font-semibold text-slate-100 truncate">${esc(x.food)}</div>
         <div class="text-[11px] text-slate-500 font-mono">${esc(x.qty)} ${esc(x.unit)} · P ${x.protein} C ${x.carbs} F ${x.fat}</div>
       </div>
-      <span class="font-mono text-sm font-bold text-brand-orange">${fmt(x.calories)}</span>
+      <span class="font-mono text-sm font-bold text-cyan-400">${fmt(x.calories)}</span>
       ${rowDelete('Nutrition', x.rowId)}
     </div>`).join('');
 }
@@ -204,8 +209,11 @@ function renderLibrary(d) {
         <div class="text-[11px] text-slate-500 font-mono">per ${f.refAmount} ${esc(f.refUnit)} · P ${f.protein} C ${f.carbs} F ${f.fat}</div>
       </div>
       <div class="text-right">
-        <div class="font-mono text-sm font-bold text-brand-orange">${fmt(f.calories)}</div>
-        <div class="text-[10px] text-slate-600">${f.uses}× used</div>
+        <div class="font-mono text-sm font-bold text-cyan-400">${fmt(f.calories)}</div>
+        <div class="flex items-center justify-end gap-1 mt-1">
+          <span class="currency-tag">${esc(d.goals.currency || 'toman')}</span>
+          <span class="text-[10px] text-slate-600">${f.uses}× used</span>
+        </div>
       </div>
     </button>`).join('');
 }
@@ -258,7 +266,10 @@ function renderExpenses(d) {
         <div class="text-sm font-semibold text-slate-100 truncate">${esc(x.merchant || x.category)}</div>
         <div class="text-[11px] text-slate-500">${esc(x.date)} · ${esc(x.category)}</div>
       </div>
-      <span class="font-mono text-sm font-bold text-brand-purple">${fmt(x.amount)}</span>
+      <div class="text-right">
+        <div class="font-mono text-sm font-bold text-purple-400">${fmt(x.amount)}</div>
+        <span class="currency-tag">${esc(cur)}</span>
+      </div>
       ${rowDelete('Expenses', x.rowId)}
     </div>`).join('');
 }
@@ -449,18 +460,38 @@ function renderParsed() {
                       : (it.estimated ? '<span class="badge badge-manual">fill in</span>'
                                       : '<span class="badge badge-ai">ai</span>')}
         </div>
-        <div class="grid grid-cols-5 gap-1 mt-1.5">
-          <input class="field !py-1 !px-1.5 !text-xs" data-qty="${i}" type="number" step="0.1" value="${it.qty}" title="Amount">
-          <input class="field !py-1 !px-1.5 !text-xs" data-mac="calories" data-i="${i}" type="number" value="${it.calories}" title="kcal">
-          <input class="field !py-1 !px-1.5 !text-xs" data-mac="protein"  data-i="${i}" type="number" value="${it.protein}" title="protein">
-          <input class="field !py-1 !px-1.5 !text-xs" data-mac="carbs"    data-i="${i}" type="number" value="${it.carbs}" title="carbs">
-          <input class="field !py-1 !px-1.5 !text-xs" data-mac="fat"      data-i="${i}" type="number" value="${it.fat}" title="fat">
+        <div class="grid grid-cols-5 gap-1.5 mt-2">
+          <div class="stepper" data-qty="${i}">
+            <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
+            <input class="stepper-input" type="number" step="0.1" value="${it.qty}" readonly aria-label="Quantity">
+            <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
+          </div>
+          <div class="stepper" data-mac="calories" data-i="${i}">
+            <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
+            <input class="stepper-input" type="number" value="${it.calories}" readonly aria-label="Calories">
+            <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
+          </div>
+          <div class="stepper" data-mac="protein" data-i="${i}">
+            <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
+            <input class="stepper-input" type="number" value="${it.protein}" readonly aria-label="Protein">
+            <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
+          </div>
+          <div class="stepper" data-mac="carbs" data-i="${i}">
+            <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
+            <input class="stepper-input" type="number" value="${it.carbs}" readonly aria-label="Carbs">
+            <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
+          </div>
+          <div class="stepper" data-mac="fat" data-i="${i}">
+            <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
+            <input class="stepper-input" type="number" value="${it.fat}" readonly aria-label="Fat">
+            <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
+          </div>
         </div>
-        <div class="text-[10px] text-slate-600 mt-1">amount · kcal · P · C · F</div>
+        <div class="text-[10px] text-slate-600 mt-1">qty · kcal · P · C · F</div>
       </div>
       <button class="icon-btn" data-rm="${i}"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
     </div>`).join('') + `
-    <div class="flex items-center justify-between rounded-xl bg-gradient-to-r from-brand-orange/20 to-amber-400/10 px-3 py-2">
+    <div class="flex items-center justify-between rounded-xl bg-gradient-to-r from-cyan-500/20 to-purple-500/10 px-3 py-2">
       <span class="text-[11px] uppercase tracking-wider font-bold text-slate-300">Total</span>
       <span class="font-mono text-sm font-extrabold text-white">
         <span id="p-cal">${fmt(t.calories)}</span> kcal ·
@@ -471,6 +502,32 @@ function renderParsed() {
     </div>`;
   lucide.createIcons();
   $('#food-add').disabled = false;
+
+  // Attach stepper click handlers
+  box.querySelectorAll('.stepper').forEach(st => {
+    const idx = +st.dataset.i || +st.dataset.qty;
+    const isQty = st.dataset.qty !== undefined;
+    const mac = st.dataset.mac;
+    st.querySelectorAll('.stepper-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const it = S.parsed[idx];
+        if (!it) return;
+        const action = btn.dataset.action;
+        const step = isQty ? 0.1 : 1;
+        if (isQty) {
+          it.qty = Math.max(0, round1(it.qty + (action === 'inc' ? step : -step)));
+          recompute(it);
+        } else {
+          it[mac] = Math.max(0, round1(it[mac] + (action === 'inc' ? step : -step)));
+          // Keep reference macros in sync
+          const k = it.refAmount ? (it.qty / it.refAmount) : 0;
+          if (k) it.per[mac] = round1(it[mac] / k);
+        }
+        renderParsed();
+      });
+    });
+  });
 }
 
 /** Look up a typed name in the library. Returns a match or null. */

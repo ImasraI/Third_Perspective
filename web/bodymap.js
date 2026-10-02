@@ -1,13 +1,8 @@
 /* ============================================================================
-   bodymap.js - front/back human body map with per-muscle training status
+   bodymap.js - front/back muscular anime-style body map
    ============================================================================
-   Pure SVG. No dependencies. `renderBodyMap(el, muscleStatus)` paints a
-   front + back figure where each muscle is coloured by how recently it was
-   trained:
-       < 3 days   -> green   (recovering)
-       3-6 days   -> amber   (due again soon)
-       7-13 days  -> orange  (overdue)
-       never      -> slate   (untrained)
+   Pure SVG. 12 muscle groups, each a distinct path that can be coloured
+   by recovery status. Uses currentColor so CSS tone classes drive the look.
    ==========================================================================*/
 
 const MUSCLE_LABELS = {
@@ -31,7 +26,6 @@ const MUSCLE_EMOJI = {
   quads: '🦵', hamstrings: '🦵', calves: '👟'
 };
 
-/** Colour class for a muscle given its status from the API. */
 function muscleTone(m) {
   if (!m || !m.trained) return 'bm-none';
   const d = m.daysAgo;
@@ -43,159 +37,196 @@ function muscleTone(m) {
 }
 
 /* --------------------------------------------------------------------------
-   Geometry. Limbs are thick round-capped strokes so the figure stays clean at
-   any size; muscle regions are short strokes / paths layered on top.
-   viewBox is 0 0 200 400 for both figures.
+   Muscular anime-style figures. ViewBox 0 0 200 400.
+   Each muscle group is a <g data-muscle="name"> with internal shapes.
+   Fill/stroke = currentColor so CSS .bm-* classes apply the tone.
    -------------------------------------------------------------------------- */
 
 function figureFront() {
   return `
-  <svg viewBox="0 0 200 400" class="bm-svg" role="img" aria-label="Front of body muscle map">
+  <svg viewBox="0 0 200 400" class="bm-svg" role="img" aria-label="Front muscular anatomy">
     <defs>
-      <linearGradient id="bmBase" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#243044"/>
-        <stop offset="100%" stop-color="#1a2332"/>
+      <linearGradient id="bmBaseF" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#1e2a3a"/>
+        <stop offset="100%" stop-color="#121a25"/>
       </linearGradient>
     </defs>
 
-    <!-- ============ BASE SILHOUETTE (front) ============ -->
-    <g class="bm-base">
-      <ellipse cx="100" cy="34" rx="21" ry="25" fill="url(#bmBase)"/>
-      <path d="M91,55 h18 v12 h-18 z" fill="url(#bmBase)"/>
-      <path d="M100,66
-               C76,66 60,76 56,94
-               L62,150 C64,168 74,180 86,184
-               L86,198 h28 v-14 h-28 z"
-            fill="url(#bmBase)"/>
-      <path d="M86,198 h28 v10 h-28 z" fill="url(#bmBase)"/>
-      <path d="M58,92 C44,112 39,144 37,198" stroke="url(#bmBase)" stroke-width="21"
-            fill="none" stroke-linecap="round"/>
-      <path d="M142,92 C156,112 161,144 163,198" stroke="url(#bmBase)" stroke-width="21"
-            fill="none" stroke-linecap="round"/>
-      <path d="M88,204 C84,250 83,306 85,362" stroke="url(#bmBase)" stroke-width="27"
-            fill="none" stroke-linecap="round"/>
-      <path d="M112,204 C116,250 117,306 115,362" stroke="url(#bmBase)" stroke-width="27"
-            fill="none" stroke-linecap="round"/>
+    <!-- BASE SILHOUETTE (front) - subtle under-layer -->
+    <g class="bm-base" fill="url(#bmBaseF)">
+      <ellipse cx="100" cy="34" rx="22" ry="26"/>
+      <path d="M90,56 h20 v14 h-20 z"/>
+      <path d="M100,68
+               C76,68 60,78 56,96
+               L62,152 C64,170 74,182 86,186
+               L86,200 h28 v-14 h-28 z"/>
+      <path d="M86,200 h28 v10 h-28 z"/>
+      <path d="M57,94 C43,114 38,146 36,200" stroke-width="22" stroke-linecap="round" fill="none"/>
+      <path d="M143,94 C157,114 162,146 164,200" stroke-width="22" stroke-linecap="round" fill="none"/>
+      <path d="M87,206 C83,252 82,308 84,364" stroke-width="28" stroke-linecap="round" fill="none"/>
+      <path d="M113,206 C117,252 118,308 116,364" stroke-width="28" stroke-linecap="round" fill="none"/>
     </g>
 
-    <!-- ============ SHOULDERS (front delts) ============ -->
+    <!-- SHOULDERS (anterior delts) -->
     <g data-muscle="shoulders" data-view="front" class="bm-region">
-      <path d="M60,86 C68,80 76,78 82,79" stroke-width="17" fill="none" stroke-linecap="round"/>
-      <path d="M140,86 C132,80 124,78 118,79" stroke-width="17" fill="none" stroke-linecap="round"/>
+      <ellipse cx="62" cy="84" rx="16" ry="10" transform="rotate(-15 62 84)"/>
+      <ellipse cx="138" cy="84" rx="16" ry="10" transform="rotate(15 138 84)"/>
     </g>
 
-    <!-- ============ CHEST ============ -->
+    <!-- CHEST (pectoralis major - upper & lower) -->
     <g data-muscle="chest" data-view="front" class="bm-region">
-      <path d="M74,96 C82,92 94,91 99,92 L99,116 C92,118 82,116 76,111 Z"/>
-      <path d="M126,96 C118,92 106,91 101,92 L101,116 C108,118 118,116 124,111 Z"/>
+      <path d="M78,96
+               C84,92 93,90 100,91
+               L100,120
+               C94,122 84,120 78,116 Z"/>
+      <path d="M122,96
+               C116,92 107,90 100,91
+               L100,120
+               C106,122 116,120 122,116 Z"/>
+      <path d="M82,116
+               C86,122 94,126 100,127
+               L100,140
+               C93,138 85,134 82,128 Z"/>
+      <path d="M118,116
+               C114,122 106,126 100,127
+               L100,140
+               C107,138 115,134 118,128 Z"/>
     </g>
 
-    <!-- ============ BICEPS ============ -->
+    <!-- BICEPS (short & long head) -->
     <g data-muscle="biceps" data-view="front" class="bm-region">
-      <path d="M52,120 C48,136 46,150 45,162" stroke-width="15" fill="none" stroke-linecap="round"/>
-      <path d="M148,120 C152,136 154,150 155,162" stroke-width="15" fill="none" stroke-linecap="round"/>
+      <path d="M54,122 C50,138 48,152 47,164" stroke-width="16" stroke-linecap="round" fill="none"/>
+      <path d="M146,122 C150,138 152,152 153,164" stroke-width="16" stroke-linecap="round" fill="none"/>
+      <ellipse cx="56" cy="140" rx="9" ry="6" transform="rotate(-5 56 140)"/>
+      <ellipse cx="144" cy="140" rx="9" ry="6" transform="rotate(5 144 140)"/>
     </g>
 
-    <!-- ============ FOREARMS ============ -->
+    <!-- FOREARMS -->
     <g data-muscle="forearms" data-view="front" class="bm-region">
-      <path d="M44,168 C41,180 39,190 38,198" stroke-width="12" fill="none" stroke-linecap="round"/>
-      <path d="M156,168 C159,180 161,190 162,198" stroke-width="12" fill="none" stroke-linecap="round"/>
+      <path d="M46,170 C43,182 41,192 40,200" stroke-width="13" stroke-linecap="round" fill="none"/>
+      <path d="M154,170 C157,182 159,192 160,200" stroke-width="13" stroke-linecap="round" fill="none"/>
+      <ellipse cx="48" cy="185" rx="7" ry="4"/>
+      <ellipse cx="152" cy="185" rx="7" ry="4"/>
     </g>
 
-    <!-- ============ ABS ============ -->
+    <!-- ABS (6-pack + lower) -->
     <g data-muscle="abs" data-view="front" class="bm-region">
-      <rect x="84" y="120" width="14" height="15" rx="5"/>
-      <rect x="102" y="120" width="14" height="15" rx="5"/>
-      <rect x="84" y="137" width="14" height="15" rx="5"/>
-      <rect x="102" y="137" width="14" height="15" rx="5"/>
-      <rect x="88" y="154" width="24" height="14" rx="6"/>
-      <rect x="89" y="170" width="22" height="12" rx="5"/>
+      <rect x="85" y="122" width="13" height="14" rx="4"/>
+      <rect x="102" y="122" width="13" height="14" rx="4"/>
+      <rect x="85" y="138" width="13" height="14" rx="4"/>
+      <rect x="102" y="138" width="13" height="14" rx="4"/>
+      <rect x="85" y="154" width="13" height="14" rx="4"/>
+      <rect x="102" y="154" width="13" height="14" rx="4"/>
+      <path d="M86,170 Q100,176 114,170 L113,182 Q100,176 87,182 Z" fill="currentColor" stroke="currentColor" stroke-width="0.5"/>
     </g>
 
-    <!-- ============ OBLIQUES ============ -->
+    <!-- OBLIQUES -->
     <g data-muscle="obliques" data-view="front" class="bm-region">
-      <path d="M76,124 C72,138 72,154 76,168" stroke-width="10" fill="none" stroke-linecap="round"/>
-      <path d="M124,124 C128,138 128,154 124,168" stroke-width="10" fill="none" stroke-linecap="round"/>
+      <path d="M76,126 C70,142 68,158 72,172" stroke-width="11" stroke-linecap="round" fill="none"/>
+      <path d="M124,126 C130,142 132,158 128,172" stroke-width="11" stroke-linecap="round" fill="none"/>
+      <path d="M72,130 C66,144 64,160 68,174" stroke-width="9" stroke-linecap="round" fill="none"/>
+      <path d="M128,130 C134,144 136,160 132,174" stroke-width="9" stroke-linecap="round" fill="none"/>
     </g>
 
-    <!-- ============ QUADS ============ -->
+    <!-- QUADS (4 heads) -->
     <g data-muscle="quads" data-view="front" class="bm-region">
-      <path d="M88,210 C85,244 85,268 86,288" stroke-width="21" fill="none" stroke-linecap="round"/>
-      <path d="M112,210 C115,244 115,268 114,288" stroke-width="21" fill="none" stroke-linecap="round"/>
+      <path d="M88,212 C85,246 85,270 86,290" stroke-width="22" stroke-linecap="round" fill="none"/>
+      <path d="M112,212 C115,246 115,270 114,290" stroke-width="22" stroke-linecap="round" fill="none"/>
+      <path d="M86,220 C82,250 82,272 83,290" stroke-width="16" stroke-linecap="round" fill="none"/>
+      <path d="M114,220 C118,250 118,272 117,290" stroke-width="16" stroke-linecap="round" fill="none"/>
     </g>
 
-    <!-- ============ CALVES (front) ============ -->
+    <!-- CALVES (front - tibialis + gastrocnemius medial/lateral) -->
     <g data-muscle="calves" data-view="front" class="bm-region">
-      <path d="M86,298 C86,318 86,338 86,354" stroke-width="15" fill="none" stroke-linecap="round"/>
-      <path d="M114,298 C114,318 114,338 114,354" stroke-width="15" fill="none" stroke-linecap="round"/>
+      <path d="M86,300 C86,320 86,340 86,356" stroke-width="16" stroke-linecap="round" fill="none"/>
+      <path d="M114,300 C114,320 114,340 114,356" stroke-width="16" stroke-linecap="round" fill="none"/>
+      <ellipse cx="88" cy="320" rx="9" ry="5"/>
+      <ellipse cx="112" cy="320" rx="9" ry="5"/>
     </g>
   </svg>`;
 }
 
 function figureBack() {
   return `
-  <svg viewBox="0 0 200 400" class="bm-svg" role="img" aria-label="Back of body muscle map">
-    <!-- ============ BASE SILHOUETTE (back) ============ -->
-    <g class="bm-base">
-      <ellipse cx="100" cy="34" rx="21" ry="25" fill="#1a2332"/>
-      <path d="M91,55 h18 v12 h-18 z" fill="#1a2332"/>
-      <path d="M100,66
-               C76,66 60,76 56,94
-               L62,150 C64,168 74,180 86,184
-               L86,198 h28 v-14 h-28 z"
-            fill="#1a2332"/>
-      <path d="M86,198 h28 v10 h-28 z" fill="#1a2332"/>
-      <path d="M58,92 C44,112 39,144 37,198" stroke="#1a2332" stroke-width="21"
-            fill="none" stroke-linecap="round"/>
-      <path d="M142,92 C156,112 161,144 163,198" stroke="#1a2332" stroke-width="21"
-            fill="none" stroke-linecap="round"/>
-      <path d="M88,204 C84,250 83,306 85,362" stroke="#1a2332" stroke-width="27"
-            fill="none" stroke-linecap="round"/>
-      <path d="M112,204 C116,250 117,306 115,362" stroke="#1a2332" stroke-width="27"
-            fill="none" stroke-linecap="round"/>
+  <svg viewBox="0 0 200 400" class="bm-svg" role="img" aria-label="Back muscular anatomy">
+    <defs>
+      <linearGradient id="bmBaseB" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#1e2a3a"/>
+        <stop offset="100%" stop-color="#121a25"/>
+      </linearGradient>
+    </defs>
+
+    <!-- BASE SILHOUETTE (back) -->
+    <g class="bm-base" fill="url(#bmBaseB)">
+      <ellipse cx="100" cy="34" rx="22" ry="26"/>
+      <path d="M90,56 h20 v14 h-20 z"/>
+      <path d="M100,68
+               C76,68 60,78 56,96
+               L62,152 C64,170 74,182 86,186
+               L86,200 h28 v-14 h-28 z"/>
+      <path d="M86,200 h28 v10 h-28 z"/>
+      <path d="M57,94 C43,114 38,146 36,200" stroke-width="22" stroke-linecap="round" fill="none"/>
+      <path d="M143,94 C157,114 162,146 164,200" stroke-width="22" stroke-linecap="round" fill="none"/>
+      <path d="M87,206 C83,252 82,308 84,364" stroke-width="28" stroke-linecap="round" fill="none"/>
+      <path d="M113,206 C117,252 118,308 116,364" stroke-width="28" stroke-linecap="round" fill="none"/>
     </g>
 
-    <!-- ============ BACK (traps + lats) ============ -->
+    <!-- BACK (trapezius + latissimus dorsi) -->
     <g data-muscle="back" data-view="back" class="bm-region">
-      <path d="M78,82 C90,90 110,90 122,82 L118,96 C108,102 92,102 82,96 Z"/>
-      <path d="M74,98 C80,124 84,150 86,178 L70,178 C66,150 66,122 68,100 Z"/>
-      <path d="M126,98 C120,124 116,150 114,178 L130,178 C134,150 134,122 132,100 Z"/>
+      <!-- Traps -->
+      <path d="M80,82 C92,90 108,90 120,82 L116,96 C106,102 94,102 84,96 Z"/>
+      <path d="M84,96 C88,110 92,124 94,140 L70,140 C66,126 66,112 70,100 Z"/>
+      <path d="M116,96 C112,110 108,124 106,140 L130,140 C134,126 134,112 130,100 Z"/>
+      <!-- Lats -->
+      <path d="M72,140 C78,160 82,180 84,200 L68,200 C64,180 62,160 64,144 Z"/>
+      <path d="M128,140 C122,160 118,180 116,200 L132,200 C136,180 138,160 136,144 Z"/>
+      <!-- Lower back / erector spinae -->
+      <path d="M92,170 C94,200 94,220 92,240 L108,240 C106,220 106,200 108,170 Z"/>
     </g>
 
-    <!-- ============ SHOULDERS (rear delts) ============ -->
+    <!-- SHOULDERS (rear delts) -->
     <g data-muscle="shoulders" data-view="back" class="bm-region">
-      <path d="M60,86 C68,80 76,78 82,79" stroke-width="16" fill="none" stroke-linecap="round"/>
-      <path d="M140,86 C132,80 124,78 118,79" stroke-width="16" fill="none" stroke-linecap="round"/>
+      <ellipse cx="62" cy="84" rx="15" ry="9" transform="rotate(-10 62 84)"/>
+      <ellipse cx="138" cy="84" rx="15" ry="9" transform="rotate(10 138 84)"/>
     </g>
 
-    <!-- ============ TRICEPS ============ -->
+    <!-- TRICEPS (long, lateral, medial heads) -->
     <g data-muscle="triceps" data-view="back" class="bm-region">
-      <path d="M52,120 C48,136 46,150 45,162" stroke-width="15" fill="none" stroke-linecap="round"/>
-      <path d="M148,120 C152,136 154,150 155,162" stroke-width="15" fill="none" stroke-linecap="round"/>
+      <path d="M54,122 C50,138 48,152 47,164" stroke-width="16" stroke-linecap="round" fill="none"/>
+      <path d="M146,122 C150,138 152,152 153,164" stroke-width="16" stroke-linecap="round" fill="none"/>
+      <ellipse cx="56" cy="140" rx="9" ry="6" transform="rotate(5 56 140)"/>
+      <ellipse cx="144" cy="140" rx="9" ry="6" transform="rotate(-5 144 140)"/>
     </g>
 
-    <!-- ============ FOREARMS (back) ============ -->
+    <!-- FOREARMS (back) -->
     <g data-muscle="forearms" data-view="back" class="bm-region">
-      <path d="M44,168 C41,180 39,190 38,198" stroke-width="12" fill="none" stroke-linecap="round"/>
-      <path d="M156,168 C159,180 161,190 162,198" stroke-width="12" fill="none" stroke-linecap="round"/>
+      <path d="M46,170 C43,182 41,192 40,200" stroke-width="13" stroke-linecap="round" fill="none"/>
+      <path d="M154,170 C157,182 159,192 160,200" stroke-width="13" stroke-linecap="round" fill="none"/>
+      <ellipse cx="48" cy="185" rx="7" ry="4"/>
+      <ellipse cx="152" cy="185" rx="7" ry="4"/>
     </g>
 
-    <!-- ============ GLUTES ============ -->
+    <!-- GLUTES -->
     <g data-muscle="glutes" data-view="back" class="bm-region">
-      <ellipse cx="90" cy="192" rx="13" ry="12"/>
-      <ellipse cx="110" cy="192" rx="13" ry="12"/>
+      <ellipse cx="90" cy="194" rx="15" ry="13"/>
+      <ellipse cx="110" cy="194" rx="15" ry="13"/>
+      <path d="M88,200 Q90,210 92,200 L108,200 Q110,210 112,200 Z" fill="currentColor" stroke="currentColor" stroke-width="0.5"/>
     </g>
 
-    <!-- ============ HAMSTRINGS ============ -->
+    <!-- HAMSTRINGS -->
     <g data-muscle="hamstrings" data-view="back" class="bm-region">
-      <path d="M88,208 C85,240 85,264 86,282" stroke-width="21" fill="none" stroke-linecap="round"/>
-      <path d="M112,208 C115,240 115,264 114,282" stroke-width="21" fill="none" stroke-linecap="round"/>
+      <path d="M88,210 C85,242 85,266 86,284" stroke-width="22" stroke-linecap="round" fill="none"/>
+      <path d="M112,210 C115,242 115,266 114,284" stroke-width="22" stroke-linecap="round" fill="none"/>
+      <path d="M86,218 C82,246 82,268 83,286" stroke-width="16" stroke-linecap="round" fill="none"/>
+      <path d="M114,218 C118,246 118,268 117,286" stroke-width="16" stroke-linecap="round" fill="none"/>
     </g>
 
-    <!-- ============ CALVES (back) ============ -->
+    <!-- CALVES (back - gastrocnemius + soleus) -->
     <g data-muscle="calves" data-view="back" class="bm-region">
-      <path d="M86,292 C87,314 86,336 86,352" stroke-width="16" fill="none" stroke-linecap="round"/>
-      <path d="M114,292 C113,314 114,336 114,352" stroke-width="16" fill="none" stroke-linecap="round"/>
+      <path d="M86,294 C87,316 86,338 86,354" stroke-width="17" stroke-linecap="round" fill="none"/>
+      <path d="M114,294 C113,316 114,338 114,354" stroke-width="17" stroke-linecap="round" fill="none"/>
+      <ellipse cx="88" cy="315" rx="10" ry="6"/>
+      <ellipse cx="112" cy="315" rx="10" ry="6"/>
     </g>
   </svg>`;
 }
@@ -217,7 +248,7 @@ function renderBodyMap(root, status) {
     g.setAttribute('stroke', 'currentColor');
     g.classList.add(tone);
     g.style.color = '';
-    // Remove the hardcoded silhouette colour so the tone class wins.
+    // Propagate to children so tone wins over base fill
     g.querySelectorAll('*').forEach(function (child) {
       child.setAttribute('fill', 'currentColor');
       child.setAttribute('stroke', 'currentColor');

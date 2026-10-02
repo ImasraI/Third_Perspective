@@ -1,23 +1,23 @@
 {
-  "name": "Goal Tracker",
-  "short_name": "Goal",
-  "description": "Personal daily tracker for calories, workouts, study, and expenses",
-  "id": "goal-tracker",
+  "name": "ThirdPerspective",
+  "short_name": "ThirdPerspective",
+  "description": "Personal daily tracker for nutrition, workouts, study, and expenses — with AI food parsing and muscle recovery map",
+  "id": "third-perspective",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#090D16",
-  "theme_color": "#090D16",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
   "orientation": "any",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='40' fill='%23090D16'/><circle cx='96' cy='96' r='60' fill='none' stroke='%23FF5722' stroke-width='16'/><circle cx='96' cy='96' r='40' fill='none' stroke='%2300E5FF' stroke-width='12'/><circle cx='96' cy='96' r='24' fill='none' stroke='%238B5CF6' stroke-width='8'/></svg>",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='192' y2='192'%3E%3Cstop offset='0' stop-color='%2322d3ee'/%3E%3Cstop offset='1' stop-color='%23a855f7'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='192' height='192' rx='40' fill='%230f172a'/%3E%3Cpath d='M19 96 Q19 19 96 19 Q173 19 173 96 Q173 173 96 173 Q19 173 19 96' fill='none' stroke='url(%23g)' stroke-width='16' stroke-linecap='round'/%3E%3Cpath d='M58 96 Q58 58 96 58 Q134 58 134 96 Q134 134 96 134 Q58 134 58 96' fill='none' stroke='%2322d3ee' stroke-width='8' stroke-dasharray='16,24'/%3E%3Ccircle cx='96' cy='96' r='24' fill='%23a855f7'/%3E%3C/svg%3E",
       "sizes": "192x192",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     },
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='100' fill='%23090D16'/><circle cx='256' cy='256' r='160' fill='none' stroke='%23FF5722' stroke-width='36'/><circle cx='256' cy='256' r='110' fill='none' stroke='%2300E5FF' stroke-width='28'/><circle cx='256' cy='256' r='65' fill='none' stroke='%238B5CF6' stroke-width='20'/></svg>",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='512' y2='512'%3E%3Cstop offset='0' stop-color='%2322d3ee'/%3E%3Cstop offset='1' stop-color='%23a855f7'/%3E%3C/defs%3E%3Crect width='512' height='512' rx='100' fill='%230f172a'/%3E%3Cpath d='M51 256 Q51 51 256 51 Q461 51 461 256 Q461 461 256 461 Q51 461 51 256' fill='none' stroke='url(%23g)' stroke-width='40' stroke-linecap='round'/%3E%3Cpath d='M155 256 Q155 155 256 155 Q357 155 357 256 Q357 357 256 357 Q155 357 155 256' fill='none' stroke='%2322d3ee' stroke-width='20' stroke-dasharray='40,60'/%3E%3Ccircle cx='256' cy='256' r='65' fill='%23a855f7'/%3E%3C/svg%3E",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"

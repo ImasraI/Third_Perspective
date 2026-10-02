@@ -1,53 +1,98 @@
 /* ============================================================================
-   Goal Tracker - dark glassmorphism theme
+   ThirdPerspective - dark glassmorphism theme (cyan/purple)
    ========================================================================== */
 
 :root {
-  --color-orange: #FF5722;
-  --color-cyan: #00E5FF;
-  --color-purple: #8B5CF6;
-  --color-green: #10B981;
+  --color-cyan: #22d3ee;
+  --color-purple: #a855f7;
+  --color-green: #22c55e;
+  --color-amber: #f59e0b;
+  --color-red: #ef4444;
 
-  /* body map tones */
-  --bm-none: #2c3a50;
-  --bm-fresh: #10B981;
-  --bm-recent: #22C55E;
-  --bm-due: #F59E0B;
-  --bm-overdue: #EF4444;
-  --bm-cold: #64748B;
+  /* body map tones - muscular anime style */
+  --bm-fresh:   #22c55e;   /* 0-2d   - vibrant green */
+  --bm-recent:  #4ade80;   /* 3-6d   - lighter green */
+  --bm-due:     #f59e0b;   /* 7-13d  - amber warning */
+  --bm-overdue: #ef4444;   /* 14-20d - red overdue */
+  --bm-cold:    #64748b;   /* 21+    - cold slate */
+  --bm-none:    #1e293b;   /* never  - dark base */
 }
 
 body {
-  background-color: #090D16;
+  background-color: #0f172a;
   background-image:
-    radial-gradient(at 10% 10%, rgba(255, 87, 34, 0.06) 0px, transparent 50%),
-    radial-gradient(at 90% 90%, rgba(0, 229, 255, 0.05) 0px, transparent 50%),
-    radial-gradient(at 50% 50%, rgba(139, 92, 246, 0.04) 0px, transparent 50%);
+    radial-gradient(ellipse at 10% 10%, rgba(34, 211, 238, 0.08) 0px, transparent 50%),
+    radial-gradient(ellipse at 90% 90%, rgba(168, 85, 247, 0.07) 0px, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(34, 211, 238, 0.04) 0px, transparent 50%);
   background-attachment: fixed;
 }
 
 .glass-card {
-  background: rgba(17, 24, 39, 0.72);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(34, 211, 238, 0.12);
+  box-shadow:
+    0 10px 40px -12px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-.glass-card:hover { border-color: rgba(255, 255, 255, 0.12); }
+.glass-card:hover { border-color: rgba(34, 211, 238, 0.25); }
 
-.ring-circle {
-  transition: stroke-dashoffset 1.4s cubic-bezier(0.4, 0, 0.2, 1);
-  filter: drop-shadow(0 0 6px currentColor);
+/* Stepper buttons for qty/macros */
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border-radius: 0.65rem;
+  overflow: hidden;
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  background: rgba(2, 6, 23, 0.5);
 }
-#ring-calorie  { color: rgba(255, 87, 34, 0.6); }
-#ring-protein  { color: rgba(0, 229, 255, 0.6); }
-#ring-budget   { color: rgba(139, 92, 246, 0.6); }
+.stepper-btn {
+  width: 2.2rem;
+  height: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.stepper-btn:hover { color: var(--color-cyan); background: rgba(34, 211, 238, 0.1); }
+.stepper-btn:active { background: rgba(34, 211, 238, 0.2); }
+.stepper-input {
+  width: 3.5rem;
+  text-align: center;
+  background: transparent;
+  border: none;
+  color: #f1f5f9;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+  outline: none;
+}
+.stepper-input::-webkit-outer-spin-button,
+.stepper-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.stepper-input[type=number] { -moz-appearance: textfield; }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+/* Currency display */
+.currency-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: rgba(168, 85, 247, 0.15);
+  color: var(--color-purple);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
 
 /* ============================================================================
    Tabs
@@ -66,19 +111,8 @@ body {
 .tab-btn:hover { color: #e2e8f0; background: rgba(255, 255, 255, 0.04); }
 .tab-btn.active {
   color: #0f172a;
-  background: linear-gradient(135deg, #22d3ee, #38bdf8);
+  background: linear-gradient(135deg, var(--color-cyan), #38bdf8);
   box-shadow: 0 6px 18px -6px rgba(34, 211, 238, 0.6);
-}
-.tab-btn.muted-active {
-  color: #0f172a;
-  background: linear-gradient(135deg, #fb923c, #f472b6);
-  box-shadow: 0 6px 18px -6px rgba(251, 146, 60, 0.6);
-}
-
-.tab-panel { animation: fade-up 0.25s ease both; }
-@keyframes fade-up {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* ============================================================================
@@ -98,7 +132,7 @@ body {
 .field:focus {
   outline: none;
   border-color: var(--color-cyan);
-  box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.13);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.13);
 }
 select.field { appearance: none; background-image: none; }
 select.field option { background: #0f172a; color: #f1f5f9; }
@@ -120,10 +154,10 @@ select.field option { background: #0f172a; color: #f1f5f9; }
 .btn:active { transform: scale(0.97); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-.btn-primary { background: linear-gradient(135deg, #00E5FF, #3b82f6); color: #04121f; }
-.btn-food     { background: linear-gradient(135deg, #FF5722, #fbbf24); color: #1a0a02; }
-.btn-workout  { background: linear-gradient(135deg, #10B981, #00E5FF); color: #04201a; }
-.btn-money    { background: linear-gradient(135deg, #8B5CF6, #ec4899); color: #12061f; }
+.btn-primary { background: linear-gradient(135deg, var(--color-cyan), #3b82f6); color: #04121f; }
+.btn-food     { background: linear-gradient(135deg, #fb923c, #fbbf24); color: #1a0a02; }
+.btn-workout  { background: linear-gradient(135deg, var(--color-green), var(--color-cyan)); color: #04201a; }
+.btn-money    { background: linear-gradient(135deg, var(--color-purple), #ec4899); color: #12061f; }
 .btn-study    { background: linear-gradient(135deg, #60a5fa, #a78bfa); color: #050b1c; }
 .btn-ghost    { background: rgba(255, 255, 255, 0.05); color: #cbd5e1; border: 1px solid rgba(255, 255, 255, 0.1); }
 .btn-danger   { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
@@ -166,7 +200,7 @@ select.field option { background: #0f172a; color: #f1f5f9; }
   transition: background 0.12s ease;
 }
 .ac-item:last-child { border-bottom: none; }
-.ac-item:hover, .ac-item.sel { background: rgba(0, 229, 255, 0.1); }
+.ac-item:hover, .ac-item.sel { background: rgba(34, 211, 238, 0.1); }
 .ac-item .nm { font-size: 0.86rem; font-weight: 600; color: #f1f5f9; }
 .ac-item .mt { font-size: 0.72rem; color: #64748b; font-family: ui-monospace, monospace; white-space: nowrap; }
 
@@ -181,12 +215,12 @@ select.field option { background: #0f172a; color: #f1f5f9; }
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.badge-cache { background: rgba(16, 185, 129, 0.18); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); }
-.badge-ai    { background: rgba(139, 92, 246, 0.18); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.35); }
-.badge-manual{ background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); }
+.badge-cache   { background: rgba(34, 197, 94, 0.18); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.35); }
+.badge-ai      { background: rgba(168, 85, 247, 0.18); color: #d8b4fe; border: 1px solid rgba(168, 85, 247, 0.35); }
+.badge-manual  { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); }
 
 /* ============================================================================
-   Muscle body map
+   Muscle body map - muscular anime style
    ========================================================================== */
 .bm-grid {
   display: grid;
@@ -199,11 +233,12 @@ select.field option { background: #0f172a; color: #f1f5f9; }
 
 .bm-region {
   cursor: pointer;
-  transition: fill 0.4s ease, opacity 0.4s ease, filter 0.2s ease;
+  transition: fill 0.4s ease, opacity 0.4s ease, filter 0.2s ease, stroke 0.3s ease;
 }
-.bm-region:hover { filter: brightness(1.45); }
-.bm-region:focus { outline: none; filter: brightness(1.5); }
+.bm-region:hover { filter: brightness(1.5) drop-shadow(0 0 8px currentColor); }
+.bm-region:focus { outline: none; filter: brightness(1.5) drop-shadow(0 0 8px currentColor); }
 
+/* Tone classes applied to muscle group <g> elements */
 .bm-fresh   { color: var(--bm-fresh); }
 .bm-recent  { color: var(--bm-recent); }
 .bm-due     { color: var(--bm-due); }
@@ -211,7 +246,7 @@ select.field option { background: #0f172a; color: #f1f5f9; }
 .bm-cold    { color: var(--bm-cold); }
 .bm-none    { color: var(--bm-none); }
 
-.bm-legend { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.bm-legend { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center; }
 .bm-key {
   display: inline-flex;
   align-items: center;
@@ -249,7 +284,7 @@ select.field option { background: #0f172a; color: #f1f5f9; }
 .bm-tip.on { opacity: 1; }
 
 /* ============================================================================
-   Misc
+   Muscle chips (workout form)
    ========================================================================== */
 .chip {
   display: inline-flex;
@@ -268,11 +303,14 @@ select.field option { background: #0f172a; color: #f1f5f9; }
 }
 .chip:hover { border-color: rgba(255, 255, 255, 0.28); color: #e2e8f0; }
 .chip.on {
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(0, 229, 255, 0.2));
-  border-color: rgba(16, 185, 129, 0.6);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(34, 211, 238, 0.2));
+  border-color: rgba(34, 197, 94, 0.6);
   color: #6ee7b7;
 }
 
+/* ============================================================================
+   List rows
+   ========================================================================== */
 .list-row {
   display: flex;
   align-items: center;
@@ -306,6 +344,9 @@ select.field option { background: #0f172a; color: #f1f5f9; }
 }
 .icon-btn:hover { color: #f87171; background: rgba(239, 68, 68, 0.12); }
 
+/* ============================================================================
+   Toasts / Modal / Animations
+   ========================================================================== */
 .toast {
   position: fixed;
   left: 50%;
@@ -326,7 +367,7 @@ select.field option { background: #0f172a; color: #f1f5f9; }
   text-align: center;
 }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
-.toast.ok  { border-color: rgba(16, 185, 129, 0.5); color: #6ee7b7; }
+.toast.ok  { border-color: rgba(34, 197, 94, 0.5); color: #6ee7b7; }
 .toast.err { border-color: rgba(239, 68, 68, 0.5); color: #fca5a5; }
 .toast.warn{ border-color: rgba(245, 158, 11, 0.5); color: #fcd34d; }
 
@@ -349,8 +390,19 @@ select.field option { background: #0f172a; color: #f1f5f9; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .ai-pulse {
-  background: linear-gradient(90deg, rgba(139,92,246,0.15), rgba(0,229,255,0.15), rgba(139,92,246,0.15));
+  background: linear-gradient(90deg, rgba(168,85,247,0.15), rgba(34,211,238,0.15), rgba(168,85,247,0.15));
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }
 @keyframes shimmer { to { background-position: -200% 0; } }
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up { animation: slide-up 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
