@@ -55,6 +55,68 @@ netlify deploy --prod --dir=web
 3. If you set `APP_KEY` in Script Properties, paste the same value into **App Key**.
 4. Click **Save**. The app will fetch `state` and show the dashboard.
 
+---
+
+## 3b. Notifications
+
+Yes, the app can send notifications, and it works without any server-side push.
+
+**Turn them on:** gear (Settings) → **Notifications** → **Enable reminders** → **Send test**.
+
+There is no "allow notifications?" prompt until you press the button, which is
+deliberate — the browser will only grant permission from a user gesture.
+
+### What gets a reminder
+
+| Trigger | When it fires |
+|---------|---------------|
+| **Task due** | At the due time you typed. |
+| **Task heads-up** | 24h before, for tasks marked **High** priority. |
+| **Overdue tasks** | A few minutes after you open the app, once per day. |
+| **Class** | 15 minutes before the class start time, weekly. |
+| **Muscle recovery** | 20:00, listing groups that are due or overdue. |
+| **Nutrition check-in** | 20:00, if you are short on calories or protein. |
+| **Study target** | 20:00, if today's study minutes fall short. |
+| **Budget** | 20:00, once spending passes the month budget. |
+
+Quiet hours are **22:00–08:00**. Anything that would land in that window is held
+back until 08:00 instead of waking you up.
+
+### Due-date formats the parser understands
+
+Type these straight into the **Due** field — no date picker needed:
+
+```
+friday 5pm          tomorrow 9am          tonight
+today 6pm           tomorrow morning      in 30 minutes
+oct 12              12 oct                2026-10-09 14:30
+2026-10-09          mon 09:00             17:00
+```
+
+A bare number `1`–`7` is read as afternoon (`5` → 17:00). Anything unparseable is
+simply not scheduled, so a vague note like "sometime" will not fire.
+
+### Why "works while the app is open" is the default
+
+A static PWA has no backend to push from, so reminders come from one of two paths:
+
+- **Notification Triggers** (`TimestampTrigger`) — Chrome, and **only after you
+  install the app**. The OS takes over and fires the notification with the app
+  fully closed. This is the good path.
+- **In-page timer** — every other browser, but only while a tab is open.
+
+The Settings panel states which one you have. To get closed-app reminders:
+install the app (browser menu → *Install ThirdPerspective*) and use Chrome.
+
+### Notes
+
+- Reminders are rebuilt from scratch on every sync, so editing or deleting a task
+  cannot leave a stale notification behind.
+- Each reminder is delivered once. A reminder the OS already showed is not
+  re-armed the next time you open the app.
+- Everything is stored in `localStorage` under `tp.notify.*` — no server state,
+  and nothing leaves the device except your own API calls.
+
 > Settings are stored in `localStorage` (`gt.apiUrl`, `gt.appKey`, `gt.tab`) — no server-side config needed.
 
 ---
@@ -109,6 +171,9 @@ Values are saved to **Script Properties** → persist across redeploys.
 |---------|-----|
 | "Failed to fetch" / CORS error | Make sure the Apps Script deployment access is **Anyone**. The PWA uses `text/plain` POST to avoid preflight. Also confirm the URL ends with `/exec`, not `/dev`. |
 | Buttons do nothing, console shows `Cannot read properties of null (reading 'addEventListener')` | Stale cached `app.js`/`index.html`. Hard-reload with `Ctrl+Shift+R` (or clear site data). |
+| No notifications appear | You must press **Enable reminders** — permission is never requested automatically. Also confirm the browser is not set to block notifications for the site. |
+| Reminders only arrive while a tab is open | Expected on browsers without Notification Triggers. Install the PWA and use Chrome to get closed-app reminders. |
+| A reminder fired twice | Press **Turn reminders off** then **Enable reminders** to clear the queue. |
 | `gemini.test` returns `ok: false` | Script Property `GEMINI_API_KEY` missing or invalid. |
 | Food macros look wrong | The AI may have guessed. Edit the numbers inline before hitting **Add** — the corrected values are cached for next time. |
 | Body map doesn't colour | Workouts must include at least one valid muscle from the 12-group list. |
@@ -122,13 +187,26 @@ Values are saved to **Script Properties** → persist across redeploys.
 |------|---------|
 | `Code.js` | Apps Script backend — all API actions, Sheets schema, Gemini prompts. |
 | `web/index.html` | Single-page shell, tabs, modals, Tailwind + Lucide CDN. |
-| `web/app.js` | All client logic: API calls, forms, charts, food library, body map. |
+| `web/app.js` | All client logic: API calls, forms, charts, food library, body map, notification wiring. |
+| `web/notify.js` | Reminder planner (due-date parsing) + scheduler (OS triggers / in-page timer) + dedup. |
 | `web/bodymap.js` | Front/back SVG + colour logic for muscle recovery. |
-| `web/style.css` | Glassmorphism theme, autocomplete, parse preview. |
-| `web/sw.js` | App-shell cache (static assets only). |
+| `web/style.css` | Glassmorphism theme, autocomplete, parse preview, steppers. |
+| `web/sw.js` | App-shell cache (static assets only) + `notificationclick` handling. |
 | `web/manifest.json` | PWA metadata, icons (inline SVG data URIs). |
 | `tests/test_api.js` | Node sandbox regression suite (98 tests). |
+| `tests/test_notify.js` | Reminder planning + due-date parser (57 tests). |
+| `tests/test_notify_runtime.js` | Scheduling, permission and dedup behaviour against a fake browser (12 tests). |
+| `package.json` | `npm test` runs every suite; `npm run check` syntax-checks all JS. |
 | `run_dashboard.bat` | Quick LAN static server for local testing. |
+
+---
+
+## 9b. Local development
+
+```bash
+npm test      # 167 tests across all suites
+npm run check # syntax-check Code.js + every web/*.js
+```
 
 ---
 

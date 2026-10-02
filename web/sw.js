@@ -1,11 +1,14 @@
-/* Service worker: cache the app shell only. Never cache the backend. */
-const CACHE_NAME = 'goal-tracker-v2';
+/* ThirdPerspective service worker: cache the app shell only, never the backend.
+   Also acts as the display layer for reminders, so notifications survive the page
+   being closed (see web/notify.js for how they are scheduled). */
+const CACHE_NAME = 'thirdperspective-v1';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
   './bodymap.js',
+  './notify.js',
   './manifest.json'
 ];
 
@@ -46,6 +49,32 @@ self.addEventListener('fetch', (e) => {
         return res;
       }).catch(() => hit);
       return hit || net;
+    })
+  );
+});
+
+/* Tapping a reminder focuses an existing tab, or opens the app on the tab the
+   reminder came from. */
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const data = (event.notification && event.notification.data) || {};
+  const target = data.url || './';
+  const tab = target.indexOf('?tab=') >= 0
+    ? target.slice(target.indexOf('?tab=') + 5)
+    : '';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const client of list) {
+        if ('focus' in client) {
+          if (tab && 'postMessage' in client) {
+            client.postMessage({ type: 'tp-goto', tab: tab });
+          }
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(target);
     })
   );
 });

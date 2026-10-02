@@ -422,6 +422,11 @@
         <div class="ac-wrap">
           <input id="task-input" class="field" placeholder="Submit lab report by Friday 5pm" />
         </div>
+        <p class="text-[11px] text-slate-500">
+          Add a due time like <code class="text-brand-cyan">friday 5pm</code>,
+          <code class="text-brand-cyan">tomorrow 9am</code>, <code class="text-brand-cyan">oct 12</code>,
+          or <code class="text-brand-cyan">in 2 hours</code> and it will remind you.
+        </p>
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="label">Due</label>
@@ -558,11 +563,26 @@
         <p class="text-[10px] text-slate-500 mt-1">Set <code>APP_KEY</code> in Script Properties to stop anyone else with the URL reading your data.</p>
       </div>
       <button id="save-settings-btn" class="btn btn-primary w-full">Save &amp; sync</button>
+
+      <!-- ===================== NOTIFICATIONS ===================== -->
+      <div class="pt-4 mt-2 border-t border-white/5 space-y-3">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i data-lucide="bell" class="w-4 h-4 text-brand-cyan"></i> Notifications
+        </h3>
+        <p class="text-[11px] text-slate-400" id="notify-status">Checking…</p>
+        <div class="flex gap-2">
+          <button id="notify-enable" class="btn btn-ghost flex-1">Enable reminders</button>
+          <button id="notify-test" class="btn btn-ghost flex-1">Send test</button>
+        </div>
+        <button id="notify-off" class="btn btn-ghost w-full hidden">Turn reminders off</button>
+        <p class="text-[11px] text-slate-500" id="notify-upcoming"></p>
+      </div>
     </div>
   </div>
 
   <div id="toast" class="toast"></div>
 
+  <script src="notify.js"></script>
   <script src="bodymap.js"></script>
   <script src="app.js"></script>
 </body>

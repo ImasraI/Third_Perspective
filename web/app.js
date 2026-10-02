@@ -78,6 +78,8 @@ async function load() {
     setConn('ok', 'Connected');
     render();
     $('#conn-info').textContent = 'Connected · ' + (S.data.goals.currency || '');
+    // Reminders are derived from state, so every sync rebuilds the schedule.
+    syncNotifications();
   } catch (e) {
     setConn('bad', 'Connection failed');
     $('#conn-info').textContent = 'Error: ' + e.message;
@@ -789,6 +791,7 @@ function bind() {
   $('#settings-btn').addEventListener('click', () => {
     $('#api-url-input').value = S.url;
     $('#api-key-input').value = S.key;
+    renderNotifyStatus(S.data ? (N() ? N().buildPlan(S.data, new Date()) : null) : null);
     $('#settings-modal').classList.remove('hidden');
   });
   $('#close-settings').addEventListener('click', () => $('#settings-modal').classList.add('hidden'));
@@ -997,6 +1000,11 @@ function bind() {
   ['#g-cal', '#g-pro', '#g-carb', '#g-fat', '#g-study', '#g-budget', '#g-currency']
     .forEach(s => $(s).addEventListener('input', () => { $(s).dataset.touched = '1'; }));
 
+  // notifications
+  $('#notify-enable').addEventListener('click', enableNotifications);
+  $('#notify-test').addEventListener('click', sendTestNotification);
+  $('#notify-off').addEventListener('click', disableNotifications);
+
   // install prompt
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -1015,6 +1023,115 @@ function bind() {
 let deferredPrompt = null;
 
 /* ============================================================================
+   Notifications
+   ========================================================================== */
+
+const N = () => (typeof TPNotify !== 'undefined' ? TPNotify : null);
+
+function notifyEnabled() {
+  const n = N();
+  return !!n && n.supported() && n.permission() === 'granted';
+}
+
+/** Paint the settings panel so it always reflects real permission state. */
+function renderNotifyStatus(plan) {
+  const n = N();
+  const status = $('#notify-status');
+  const upcoming = $('#notify-upcoming');
+  const off = $('#notify-off');
+  if (!n || !status) return;
+
+  if (!n.supported()) {
+    status.textContent = 'This browser cannot show notifications.';
+    $('#notify-enable').disabled = true;
+    $('#notify-test').disabled = true;
+    off.classList.add('hidden');
+    return;
+  }
+
+  const perm = n.permission();
+  if (perm === 'denied') {
+    status.textContent = 'Blocked. Re-allow notifications for this site in your browser settings, then reload.';
+    $('#notify-enable').textContent = 'Enable reminders';
+    $('#notify-enable').disabled = true;
+    $('#notify-test').disabled = true;
+    off.classList.add('hidden');
+  } else if (perm === 'default') {
+    status.textContent = n.capability();
+    $('#notify-enable').disabled = false;
+    $('#notify-test').disabled = true;
+    off.classList.add('hidden');
+  } else {
+    status.textContent = 'On. ' + n.capability();
+    $('#notify-enable').disabled = true;
+    $('#notify-test').disabled = false;
+    off.classList.remove('hidden');
+  }
+
+  if (upcoming) {
+    if (!plan || !plan.length) {
+      upcoming.textContent = notifyEnabled() ? 'No upcoming reminders.' : '';
+    } else {
+      const next = plan.slice(0, 3).map((p) =>
+        p.at.toLocaleString('en-US', { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+      );
+      upcoming.textContent = 'Next: ' + next.join(' · ');
+    }
+  }
+}
+
+/** Rebuild reminders from the freshest state and refresh the settings panel. */
+async function syncNotifications() {
+  const n = N();
+  if (!n) return;
+  if (!notifyEnabled()) {
+    renderNotifyStatus(null);
+    return;
+  }
+  try {
+    const plan = n.buildPlan(S.data, new Date());
+    await n.reschedule(S.data);
+    renderNotifyStatus(plan);
+  } catch (e) {
+    if (e && e.name !== 'NotAllowedError') console.warn('notify reschedule failed', e);
+    renderNotifyStatus(null);
+  }
+}
+
+async function enableNotifications() {
+  const n = N();
+  if (!n) return;
+  const perm = await n.request();
+  if (perm === 'granted') {
+    try { localStorage.setItem(n.LS_NOTIFY.on, '1'); } catch (e) { /* ignore */ }
+    toast('Reminders on', 'ok');
+    await syncNotifications();
+    const shown = await n.show('Reminders are on', 'Task due times, classes and goal checks will ping you.',
+      { tag: 'tp-test', url: './?tab=tasks' });
+    if (!shown) toast('Permission granted, but the browser refused to display it', 'warn');
+  } else {
+    toast('Notifications were blocked', 'warn');
+    renderNotifyStatus(null);
+  }
+}
+
+async function disableNotifications() {
+  const n = N();
+  if (!n) return;
+  await n.disable();
+  toast('Reminders off', 'ok');
+  renderNotifyStatus(null);
+}
+
+async function sendTestNotification() {
+  const n = N();
+  if (!n) return;
+  const shown = await n.show('ThirdPerspective test',
+    'Notifications are wired up correctly.', { tag: 'tp-test', url: './?tab=tasks' });
+  toast(shown ? 'Test sent — check your device' : 'The browser refused to display it', shown ? 'ok' : 'warn');
+}
+
+/* ============================================================================
    Boot
    ========================================================================== */
 
@@ -1031,6 +1148,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
+
+  // A tapped reminder asks us to jump to the tab it came from.
+  navigator.serviceWorker?.addEventListener('message', (e) => {
+    const msg = e.data;
+    if (msg && msg.type === 'tp-goto' && msg.tab) switchTab(msg.tab);
+  });
+
+  renderNotifyStatus(null);
 
   if (S.url) await load();
   else { switchTab('today'); $('#settings-modal').classList.remove('hidden'); }
