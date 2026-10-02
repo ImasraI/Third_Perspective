@@ -37,7 +37,12 @@ const CONFIG = {
   MONTHLY_SPEND_BUDGET: 30000000,
   CURRENCY_SYMBOL: 'toman',
   TIMEZONE: 'Asia/Tehran',
-  GEMINI_MODEL: 'gemini-2.5-flash'
+  GEMINI_MODEL: 'gemini-2.5-flash',
+  DEFAULT_BODY_WEIGHT_KG: 70,
+  // Gemini inline images are billed as tokens; keep the upload budget small.
+  MAX_IMAGE_BYTES: 2200000,
+  // Rough token cost of one image part, used to keep vision prompts in budget.
+  IMAGE_TOKEN_ESTIMATE: 258
 };
 
 // Script Properties (Project Settings -> Script Properties):
@@ -62,9 +67,9 @@ const SHEETS = {
 
 const SCHEMAS = [
   { name: SHEETS.NUTRITION, headers: ['Timestamp', 'Date', 'Food', 'Qty', 'Unit', 'Calories', 'Protein (g)', 'Carbs (g)', 'Fat (g)', 'Source'] },
-  { name: SHEETS.FOODS, headers: ['Key', 'Name', 'Per Amount', 'Per Unit', 'Calories', 'Protein (g)', 'Carbs (g)', 'Fat (g)', 'Uses', 'Updated'] },
+  { name: SHEETS.FOODS, headers: ['Key', 'Name', 'Per Amount', 'Per Unit', 'Calories', 'Protein (g)', 'Carbs (g)', 'Fat (g)', 'Uses', 'Updated', 'Grams per Unit'] },
   { name: SHEETS.EXPENSES, headers: ['Timestamp', 'Date', 'Amount', 'Category', 'Merchant', 'Source', 'Notes'] },
-  { name: SHEETS.WORKOUTS, headers: ['Timestamp', 'Date', 'Name', 'Exercises', 'Duration (min)', 'Muscles', 'Notes'] },
+  { name: SHEETS.WORKOUTS, headers: ['Timestamp', 'Date', 'Name', 'Exercises', 'Duration (min)', 'Muscles', 'Notes', 'Muscle Load (JSON)'] },
   { name: SHEETS.STUDY, headers: ['Timestamp', 'Date', 'Subject', 'Duration (min)', 'Notes'] },
   { name: SHEETS.TASKS, headers: ['Created', 'Task', 'Due', 'Status', 'Completed', 'Priority'] },
   { name: SHEETS.CLASSES, headers: ['Day', 'Time', 'Subject', 'Room', 'Notes'] }
@@ -92,6 +97,622 @@ const MUSCLE_KEYWORDS = {
   calves: ['calf', 'calves', 'raise', 'seated calf', 'standing calf']
 };
 
+/* ============================================================================
+   EXERCISE KNOWLEDGE BASE
+   ----------------------------------------------------------------------------
+   Each row is [canonical name, MET, muscle weights]. MET is the standard
+   compendium value used for energy cost; muscle weights say how much of the
+   effort each group actually takes, and sum to roughly 1.
+
+   Training load for a muscle is:
+       load = sets x reps x MET x muscleWeight x loadFactor
+   where loadFactor rises with external weight, so 3x10 at 100kg scores far
+   harder than 3x10 bodyweight push-ups.
+   ========================================================================== */
+
+const EXERCISE_ROWS = [
+  // chest
+  ['push-up', 8.0, { chest: 1.0, triceps: 0.85, shoulders: 0.6, abs: 0.2 }],
+  ['pushup', 8.0, { chest: 1.0, triceps: 0.85, shoulders: 0.6, abs: 0.2 }],
+  ['bench press', 6.0, { chest: 1.0, triceps: 0.7, shoulders: 0.5 }],
+  ['incline bench press', 6.0, { chest: 0.9, shoulders: 0.7, triceps: 0.6 }],
+  ['decline bench press', 6.5, { chest: 1.0, triceps: 0.6, shoulders: 0.4 }],
+  ['dumbbell bench press', 6.0, { chest: 1.0, triceps: 0.7, shoulders: 0.5 }],
+  ['chest fly', 4.5, { chest: 1.0 }],
+  ['cable fly', 4.5, { chest: 1.0 }],
+  ['pec deck', 4.0, { chest: 1.0 }],
+  ['push-up variation', 7.0, { chest: 1.0, triceps: 0.8, shoulders: 0.6 }],
+  ['clap push-up', 9.0, { chest: 1.0, triceps: 0.85, shoulders: 0.7, abs: 0.2 }],
+
+  // back
+  ['pull-up', 8.0, { back: 1.0, biceps: 0.8, forearms: 0.5 }],
+  ['pullup', 8.0, { back: 1.0, biceps: 0.8, forearms: 0.5 }],
+  ['chin-up', 8.0, { back: 1.0, biceps: 0.9, forearms: 0.5 }],
+  ['lat pulldown', 5.0, { back: 1.0, biceps: 0.7, forearms: 0.4 }],
+  ['barbell row', 6.0, { back: 1.0, biceps: 0.6, hamstrings: 0.2 }],
+  ['dumbbell row', 5.5, { back: 1.0, biceps: 0.7 }],
+  ['seated cable row', 5.0, { back: 1.0, biceps: 0.6, forearms: 0.3 }],
+  ['t-bar row', 6.0, { back: 1.0, forearms: 0.4 }],
+  ['shrug', 4.0, { back: 0.4, shoulders: 0.4 }],
+  ['deadlift', 8.0, { back: 0.8, hamstrings: 0.8, glutes: 0.7, quads: 0.4, forearms: 0.5, abs: 0.4 }],
+  ['romanian deadlift', 6.5, { hamstrings: 1.0, glutes: 0.7, back: 0.5 }],
+  ['superset pulldown', 5.0, { back: 1.0, biceps: 0.7 }],
+
+  // shoulders
+  ['overhead press', 6.0, { shoulders: 1.0, triceps: 0.6, abs: 0.3 }],
+  ['military press', 6.0, { shoulders: 1.0, triceps: 0.6 }],
+  ['lateral raise', 4.0, { shoulders: 1.0 }],
+  ['dumbbell lateral raise', 4.0, { shoulders: 1.0 }],
+  ['front raise', 4.0, { shoulders: 1.0 }],
+  ['arnold press', 5.0, { shoulders: 1.0, biceps: 0.4 }],
+  ['face pull', 4.0, { shoulders: 0.9, back: 0.4 }],
+  ['upright row', 5.0, { shoulders: 0.8, biceps: 0.5 }],
+
+  // arms
+  ['biceps curl', 4.0, { biceps: 1.0, forearms: 0.3 }],
+  ['hammer curl', 4.0, { biceps: 1.0, forearms: 0.5 }],
+  ['preacher curl', 4.0, { biceps: 1.0 }],
+  ['incline curl', 4.0, { biceps: 1.0 }],
+  ['triceps pushdown', 4.0, { triceps: 1.0 }],
+  ['triceps extension', 4.0, { triceps: 1.0 }],
+  ['skullcrusher', 4.5, { triceps: 1.0 }],
+  ['dip', 7.5, { triceps: 1.0, chest: 0.9, shoulders: 0.5 }],
+  ['bench dip', 7.0, { triceps: 1.0, chest: 0.7 }],
+  ['close-grip bench press', 6.0, { triceps: 1.0, chest: 0.7 }],
+  ['wrist curl', 3.0, { forearms: 1.0 }],
+  ['farmer carry', 5.0, { forearms: 1.0, back: 0.2, shoulders: 0.2, abs: 0.2 }],
+  ['grip squeeze', 3.0, { forearms: 1.0 }],
+
+  // core
+  ['crunch', 3.8, { abs: 1.0 }],
+  ['sit-up', 4.0, { abs: 1.0 }],
+  ['leg raise', 4.0, { abs: 1.0 }],
+  ['plank', 3.5, { abs: 1.0, obliques: 0.4, shoulders: 0.3 }],
+  ['cable crunch', 4.0, { abs: 1.0 }],
+  ['hollow hold', 4.0, { abs: 1.0 }],
+  ['russian twist', 4.0, { obliques: 1.0, abs: 0.5 }],
+  ['side plank', 3.5, { obliques: 1.0 }],
+  ['woodchop', 4.5, { obliques: 1.0, abs: 0.4 }],
+  ['hanging leg raise', 5.0, { abs: 1.0 }],
+  ['leg raise crunch', 4.0, { abs: 1.0 }],
+  ['tuck', 6.0, { abs: 1.0 }],
+  ['toe touch', 3.8, { abs: 1.0 }],
+
+  // legs and glutes
+  ['squat', 7.0, { quads: 1.0, glutes: 0.9, hamstrings: 0.4, calves: 0.2, abs: 0.4 }],
+  ['back squat', 7.0, { quads: 1.0, glutes: 0.9, hamstrings: 0.4, calves: 0.2, abs: 0.4 }],
+  ['front squat', 7.5, { quads: 1.0, glutes: 0.7, abs: 0.7 }],
+  ['bulgarian split squat', 7.0, { quads: 1.0, glutes: 0.9, hamstrings: 0.3 }],
+  ['leg press', 6.0, { quads: 1.0, glutes: 0.6, hamstrings: 0.4 }],
+  ['leg extension', 4.0, { quads: 1.0 }],
+  ['leg curl', 4.0, { hamstrings: 1.0 }],
+  ['nordic curl', 6.0, { hamstrings: 1.0, glutes: 0.4 }],
+  ['hip thrust', 6.0, { glutes: 1.0, hamstrings: 0.5 }],
+  ['glute bridge', 4.5, { glutes: 1.0, hamstrings: 0.4 }],
+  ['kettlebell swing', 8.5, { glutes: 1.0, hamstrings: 0.7, back: 0.4, abs: 0.3 }],
+  ['lunge', 6.0, { quads: 1.0, glutes: 0.7, hamstrings: 0.4 }],
+  ['walking lunge', 6.0, { quads: 1.0, glutes: 0.7, hamstrings: 0.4 }],
+  ['step-up', 5.5, { quads: 1.0, glutes: 0.8 }],
+  ['calf raise', 3.5, { calves: 1.0 }],
+  ['seated calf raise', 3.5, { calves: 1.0 }],
+  ['standing calf raise', 4.0, { calves: 1.0 }],
+  ['jump squat', 8.5, { quads: 1.0, glutes: 0.9, calves: 0.6 }],
+  ['box jump', 8.0, { quads: 0.7, glutes: 0.7, calves: 0.9, abs: 0.3 }],
+  ['hip thrust machine', 6.0, { glutes: 1.0, hamstrings: 0.5 }],
+
+  // cardio / conditioning
+  ['run', 9.0, { quads: 0.5, calves: 0.5, hamstrings: 0.4, glutes: 0.3, abs: 0.3 }],
+  ['running', 9.0, { quads: 0.5, calves: 0.5, hamstrings: 0.4, glutes: 0.3, abs: 0.3 }],
+  ['jogging', 7.0, { quads: 0.4, calves: 0.4, hamstrings: 0.3 }],
+  ['sprint', 12.0, { quads: 0.6, calves: 0.7, hamstrings: 0.5, abs: 0.3 }],
+  ['cycling', 7.5, { quads: 0.8, glutes: 0.5, calves: 0.3 }],
+  ['bike', 7.5, { quads: 0.8, glutes: 0.5, calves: 0.3 }],
+  ['rowing', 7.0, { back: 0.7, quads: 0.4, glutes: 0.3, calves: 0.3 }],
+  ['rowing machine', 7.0, { back: 0.7, quads: 0.4, glutes: 0.3, calves: 0.3 }],
+  ['swimming', 8.0, { back: 0.6, shoulders: 0.5, glutes: 0.4, quads: 0.4 }],
+  ['jump rope', 10.0, { calves: 0.8, quads: 0.5, shoulders: 0.4, forearms: 0.4 }],
+  ['burpee', 9.5, { quads: 0.7, chest: 0.7, shoulders: 0.6, abs: 0.6, calves: 0.4 }],
+  ['mountain climber', 8.0, { abs: 0.9, shoulders: 0.5, quads: 0.4 }],
+  ['pull-up bar hang', 4.0, { forearms: 0.8, back: 0.5 }],
+  ['stretching', 2.3, {}],
+  ['mobility', 2.5, {}],
+  ['yoga', 3.0, { abs: 0.3, obliques: 0.3 }],
+
+  // compound lifts and machines with no exact match in the tables above, so an
+  // unfamiliar gym machine still scores against the muscles it actually works
+  ['lat machine', 5.0, { back: 1.0, biceps: 0.6, forearms: 0.3 }],
+  ['hammer strength row', 5.5, { back: 1.0, biceps: 0.6 }],
+  ['pec deck machine', 4.0, { chest: 1.0 }],
+  ['seated dip machine', 6.0, { triceps: 1.0, chest: 0.6 }],
+  ['assault bike', 9.0, { quads: 0.7, shoulders: 0.5, back: 0.4, calves: 0.4 }],
+  ['elliptical', 5.5, { quads: 0.4, glutes: 0.3, calves: 0.3, shoulders: 0.3 }],
+  ['stair climber', 8.0, { quads: 0.8, glutes: 0.6, calves: 0.7 }],
+  ['skier', 8.5, { quads: 0.7, calves: 0.5, hamstrings: 0.5, glutes: 0.5 }],
+  ['rower', 7.0, { back: 0.7, quads: 0.4, glutes: 0.3, calves: 0.3 }],
+  ['kettlebell', 6.0, { quads: 0.4, glutes: 0.4, back: 0.4, shoulders: 0.4, biceps: 0.3 }],
+  ['dumbbell', 5.5, { back: 0.3, shoulders: 0.4, biceps: 0.3, triceps: 0.3 }],
+  ['barbell', 5.5, { back: 0.3, quads: 0.3, glutes: 0.3, shoulders: 0.3 }]
+];
+
+/**
+ * Equipment words on their own. They are NOT exercises: they only carry a
+ * low, flat MET for energy estimation, because there is no movement to score.
+ * Keeping them separate stops "gym day" from matching a fake exercise.
+ */
+const EQUIPMENT_ROWS = [
+  ['gym', 5.0],
+  ['workout', 5.0],
+  ['training', 5.0],
+  ['weights', 5.0],
+  ['session', 5.0]
+];
+
+/** Words that mean "a workout happened" without naming any movement. */
+const WORKOUT_WORDS = /\b(workout|workouts|gym|training|train|trained|leg day|arm day|push day|pull day|session)\b/;
+
+/** canonical name -> { met, muscles } */
+const EXERCISES = {};
+EXERCISE_ROWS.forEach(function (row) {
+  EXERCISES[row[0]] = { name: row[0], met: row[1], muscles: row[2] };
+});
+
+/** equipment word -> met (no muscle contribution) */
+const EQUIPMENT = {};
+EQUIPMENT_ROWS.forEach(function (row) { EQUIPMENT[row[0]] = row[1]; });
+
+/**
+ * Alias table, longest first so "bench press" always wins over a shorter alias
+ * that happens to overlap it.
+ *
+ * Only the full exercise name plus safe spelling variants are auto-derived
+ * (hyphen/space/plural). Short or ambiguous stems such as "chest" or "push" are
+ * never generated, because they would match unrelated words and swallow the
+ * real match next to them. Extra everyday names are listed explicitly.
+ */
+const EXTRA_ALIASES = [
+  ['push ups', 'push-up'], ['pushups', 'push-up'],
+  ['pull ups', 'pull-up'], ['pullups', 'pull-up'],
+  ['chin ups', 'chin-up'], ['chinups', 'chin-up'],
+  ['sit ups', 'sit-up'], ['situps', 'sit-up'],
+  ['dips', 'dip'], ['bench dips', 'bench dip'],
+  ['crunches', 'crunch'], ['squats', 'squat'],
+  ['lunges', 'lunge'], ['walking lunges', 'walking lunge'],
+  ['deadlifts', 'deadlift'], ['rows', 'barbell row'], ['barbell rows', 'barbell row'],
+  ['dumbbell rows', 'dumbbell row'], ['cable rows', 'seated cable row'],
+  ['burpees', 'burpee'], ['mountain climbers', 'mountain climber'],
+  ['leg raises', 'leg raise'], ['pull downs', 'lat pulldown'],
+  ['pull-downs', 'lat pulldown'], ['pulldowns', 'lat pulldown'],
+  ['curl', 'biceps curl'], ['dumbbell curl', 'biceps curl'],
+  ['press', 'overhead press'], ['ohp', 'overhead press'],
+  ['ohip', 'overhead press'], ['ohp press', 'overhead press'],
+  ['bench', 'bench press'], ['flat bench', 'bench press'],
+  ['squat', 'back squat'], ['back squats', 'back squat'],
+  ['rdl', 'romanian deadlift'], ['romanian deadlifts', 'romanian deadlift'],
+  ['leg press', 'leg press'],
+  ['pushdown', 'triceps pushdown'], ['push downs', 'triceps pushdown'],
+  ['triceps dips', 'dip'], ['skull crushers', 'skullcrusher'],
+  ['hammer curls', 'hammer curl'], ['preacher curls', 'preacher curl'],
+  ['lateral raises', 'lateral raise'], ['front raises', 'front raise'],
+  ['face pulls', 'face pull'], ['upright rows', 'upright row'],
+  ['run', 'run'], ['running', 'running'], ['jogging', 'jogging'],
+  ['sprint', 'sprint'], ['sprinting', 'sprint'],
+  ['bike', 'bike'], ['cycling', 'cycling'], ['biking', 'cycling'],
+  ['rowing machine', 'rowing machine'], ['erg', 'rowing machine'],
+  ['rower', 'rowing machine'],
+  ['swim', 'swimming'], ['swimming', 'swimming'],
+  ['jump rope', 'jump rope'], ['rope', 'jump rope'],
+  ['calf raises', 'calf raise'], ['calves raise', 'calf raise'],
+  ['hip thrusts', 'hip thrust'], ['glute bridges', 'glute bridge'],
+  ['leg curls', 'leg curl'], ['nordic curls', 'nordic curl'],
+  ['box jumps', 'box jump'], ['jump squats', 'jump squat'],
+  ['split squat', 'bulgarian split squat'], ['split squats', 'bulgarian split squat'],
+  ['leg extensions', 'leg extension'], ['step ups', 'step-up'],
+  ['kettlebell swing', 'kettlebell swing'], ['kb swing', 'kettlebell swing'],
+  ['plank', 'plank'], ['side planks', 'side plank'],
+  ['russian twists', 'russian twist'], ['woodchops', 'woodchop'],
+  ['hollow hold', 'hollow hold'], ['hanging leg raises', 'hanging leg raise'],
+  ['cable crunch', 'cable crunch'], ['cable crunches', 'cable crunch'],
+  ['leg raise', 'leg raise'], ['stretch', 'stretching'],
+  ['stretching', 'stretching'], ['mobility', 'mobility'], ['yoga', 'yoga'],
+  ['farmer carries', 'farmer carry'], ['farmer walk', 'farmer carry'],
+  ['wrist curls', 'wrist curl'], ['grip squeeze', 'grip squeeze'],
+  ['incline curl', 'incline curl'], ['hammer curl', 'hammer curl'],
+  ['close grip bench', 'close-grip bench press'],
+  ['close grip bench press', 'close-grip bench press'],
+  ['cable fly', 'cable fly'], ['pec deck', 'pec deck'],
+  ['clap push ups', 'clap push-up'], ['clap pushups', 'clap push-up']
+];
+
+const EXERCISE_LOOKUP = (function () {
+  const pairs = [];
+  Object.keys(EXERCISES).forEach(function (key) {
+    pairs.push([key, key]);
+    // Safe spelling variants of the complete name only.
+    const spaced = key.replace(/-/g, ' ');
+    const singularSpaced = spaced.replace(/s$/, '');
+    const spacedPlural = spaced.replace(/([^s])$/, '$1s');
+    [spaced, singularSpaced, spacedPlural].forEach(function (v) {
+      if (v && v !== key && v.length > 2) pairs.push([v, key]);
+    });
+  });
+  EXTRA_ALIASES.forEach(function (p) { pairs.push([p[0], p[1]]); });
+
+  // Longest alias first so the greedy scan prefers the most specific match.
+  pairs.sort(function (a, b) { return b[0].length - a[0].length; });
+
+  // Collapse duplicate surfaces, keeping the first (longest) target.
+  const seen = {};
+  const out = [];
+  pairs.forEach(function (p) {
+    if (seen[p[0]]) return;
+    if (!EXERCISES[p[1]]) return;   // never alias to a missing exercise
+    seen[p[0]] = true;
+    out.push(p);
+  });
+  return out;
+})();
+
+/** alias -> canonical exercise key */
+const EXERCISE_ALIAS_MAP = (function () {
+  const map = {};
+  EXERCISE_LOOKUP.forEach(function (p) { map[p[0]] = p[1]; });
+  return map;
+})();
+
+/** Muscles we can actually colour. Anything else in EXERCISES is folded away. */
+function isPaintableMuscle(name) { return MUSCLES.indexOf(name) >= 0; }
+
+/**
+ * External weight makes an exercise harder. Without a barbell the same movement
+ * is already scaled by MET, so only add weight when it was actually stated.
+ */
+function loadFactorFor(weightKg, bodyweightKg) {
+  const bw = bodyweightKg || 70;
+  if (!weightKg || weightKg <= 0) return 1;
+  // Ratio of external load to body weight, softened so bodyweight work stays 1.
+  const ratio = weightKg / bw;
+  return 1 + Math.min(1.6, ratio * 0.55);
+}
+
+// ============================================================================
+// FREE-TEXT WORKOUT PARSER
+// ----------------------------------------------------------------------------
+// Understands the way people actually type a session:
+//   "10 push ups 10 dips"      -> reps only, bodyweight
+//   "3x12 squats"              -> sets x reps
+//   "60kg bench press x5"      -> weight + reps
+//   "squats 4 sets of 8"       -> spelled-out sets
+//   "plank 60sec"              -> isometric hold
+// Numbers are attached to the NEAREST exercise name, which is what makes both
+// "3x12 squats" and "squats 60kg bench press" come out right.
+// ============================================================================
+
+const KG_PER_LB = 0.45359237;
+
+/** Ordered so the most specific modifier wins a position. */
+const MODIFIER_PATTERNS = [
+  { kind: 'setrep', re: /(\d+(?:\.\d+)?)\s*[x*]\s*(\d+(?:\.\d+)?)/g },
+  { kind: 'setsOfReps', re: /(\d+(?:\.\d+)?)\s*sets?\s*of\s*(\d+(?:\.\d+)?)/g },
+  { kind: 'seconds', re: /(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b/g },
+  { kind: 'minutes', re: /(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b/g },
+  { kind: 'sets', re: /(\d+(?:\.\d+)?)\s*sets?\b/g },
+  { kind: 'reps', re: /(\d+(?:\.\d+)?)\s*reps?\b/g },
+  { kind: 'weight', re: /(\d+(?:\.\d+)?)\s*(kg|kgs|kilogram|kilograms|lb|lbs|pound|pounds)\b/g },
+  // Trailing "x5" / "*12" with no leading set count means reps only.
+  { kind: 'repsOnly', re: /(?<![\d.])[x*]\s*(\d+(?:\.\d+)?)/g },
+  // Distance is a session-length cue for cardio, not a rep count.
+  { kind: 'distance', re: /(\d+(?:\.\d+)?)\s*(km|kilometers?|kilometres?|miles?)\b/g },
+  { kind: 'bare', re: /(?<![a-z0-9.])(\d{1,3})(?![a-z0-9.])/g }
+];
+
+/** Average running pace in minutes per km, used to turn a distance into time. */
+const MIN_PER_KM = 6.5;
+const KM_PER_MILE = 1.60934;
+
+/**
+ * People separate movements with these words: "leg press 4x10 100kg then lateral
+ * raise 3x15". Splitting on them first means each chunk is parsed on its own, so
+ * a trailing weight can never leak into the next exercise.
+ */
+const SEGMENT_SPLIT = /\s+(?:then|and|then also|also|plus|after that|followed by)\s+|[;,+&]|\s*\/\s*/g;
+
+/** Parse one movement segment: [exercise] sets/reps/weight -> structured entry. */
+function parseWorkoutSegment(text, bodyweightKg) {
+  const normalised = normaliseWorkoutText(text);
+  const exSpans = findExerciseSpans(normalised);
+  if (!exSpans.length) {
+    return { exercises: [], muscles: [], load: {}, kcal: 0, durationSec: 0, matched: false };
+  }
+
+  const items = exSpans.map(function (span) {
+    return {
+      exercise: span.exercise,
+      alias: span.alias,
+      sets: 1,
+      reps: 0,
+      seconds: 0,
+      weightKg: 0,
+      distanceKm: 0,
+      _span: span
+    };
+  });
+
+  let durationSec = 0;
+
+  // Modifiers are applied in position order so "bare" numbers can fill in the
+  // remaining slot (reps first, then sets) the way a human reads the line.
+  findModifierSpans(normalised).sort(function (a, b) { return a.start - b.start; })
+    .forEach(function (mod) {
+      const idx = ownerOfModifier(mod, exSpans);
+      if (idx === null || !items[idx]) return;
+      const best = items[idx];
+      const a = mod.text[1];
+      const b = mod.text[2];
+      if (mod.kind === 'setrep') {
+        const s = parseFloat(a), r = parseFloat(b);
+        // "10x3" is far more likely reps x sets than sets x reps.
+        if (s > 20 && r <= 20) { best.reps = s; best.sets = r; }
+        else { best.sets = s; best.reps = r; }
+      } else if (mod.kind === 'setsOfReps') {
+        best.sets = parseFloat(a); best.reps = parseFloat(b);
+      } else if (mod.kind === 'sets') {
+        best.sets = parseFloat(a);
+      } else if (mod.kind === 'reps' || mod.kind === 'repsOnly') {
+        best.reps = parseFloat(a);
+      } else if (mod.kind === 'bare') {
+        if (best.reps === 0) best.reps = parseFloat(a);
+        else if (best.sets === 1) best.sets = parseFloat(a);
+      } else if (mod.kind === 'weight') {
+        const v = parseFloat(a);
+        best.weightKg = /^l(b|bs)/.test(b) ? round1(v * KG_PER_LB) : v;
+      } else if (mod.kind === 'seconds') {
+        best.seconds = parseFloat(a);
+        durationSec += parseFloat(a);
+      } else if (mod.kind === 'minutes') {
+        const secs = parseFloat(a) * 60;
+        best.seconds = secs;
+        durationSec += secs;
+      } else if (mod.kind === 'distance') {
+        // "5km" describes a cardio session's length; convert it to working time.
+        const km = /^mi/.test(b) ? parseFloat(a) * KM_PER_MILE : parseFloat(a);
+        const secs = Math.round(km * MIN_PER_KM * 60);
+        best.seconds = secs;
+        best.distanceKm = round1(km);
+        durationSec += secs;
+      }
+    });
+
+  const exercises = [];
+  const load = {};
+  let kcal = 0;
+
+  items.forEach(function (it) {
+    const def = EXERCISES[it.exercise];
+    if (!def) return;
+    const isTime = it.seconds > 0;
+    // A hold counts as ~10s per rep so a 60s plank is comparable to 6 reps.
+    const effectiveReps = isTime ? Math.max(1, it.seconds / 10) : (it.reps > 0 ? it.reps : 1);
+    const sets = it.sets > 0 ? it.sets : 1;
+    const factor = loadFactorFor(it.weightKg, bodyweightKg);
+
+    const mus = {};
+    Object.keys(def.muscles || {}).forEach(function (m) {
+      if (!isPaintableMuscle(m)) return;
+      const value = sets * effectiveReps * def.met * def.muscles[m] * factor;
+      if (value <= 0) return;
+      mus[m] = round1(value);
+      load[m] = round1((load[m] || 0) + value);
+    });
+
+    // Energy: kcal/min = MET * 3.5 * bodyweightKg / 200
+    const bw = bodyweightKg || 70;
+    const minutes = (sets * effectiveReps) / 60;
+    kcal += (def.met * 3.5 * bw / 200) * minutes;
+
+    exercises.push({
+      name: def.name,
+      sets: round1(sets),
+      reps: isTime ? 0 : round1(it.reps || 0),
+      seconds: isTime ? round1(it.seconds) : 0,
+      weightKg: it.weightKg ? round1(it.weightKg) : 0,
+      distanceKm: it.distanceKm || 0,
+      met: def.met,
+      muscles: Object.keys(mus),
+      load: mus
+    });
+  });
+
+  return {
+    exercises: exercises,
+    muscles: Object.keys(load).sort(),
+    load: load,
+    kcal: Math.round(kcal),
+    durationSec: Math.round(durationSec),
+    matched: exercises.length > 0
+  };
+}
+
+/**
+ * Turn one line of free text into structured exercises plus per-muscle load.
+ * Never throws: unrecognised text simply yields no exercises.
+ */
+function parseWorkoutLine(text, bodyweightKg) {
+  const raw = String(text || '');
+  const segments = raw.split(SEGMENT_SPLIT).map(function (s) { return s.trim(); })
+    .filter(function (s) { return s.length > 0; });
+  if (!segments.length) segments.push(raw);
+
+  const merged = {
+    exercises: [],
+    muscles: [],
+    load: {},
+    kcal: 0,
+    durationSec: 0,
+    matched: false
+  };
+
+  segments.forEach(function (seg) {
+    const part = parseWorkoutSegment(seg, bodyweightKg);
+    if (!part.matched) return;
+    merged.matched = true;
+    part.exercises.forEach(function (e) { merged.exercises.push(e); });
+    Object.keys(part.load).forEach(function (m) {
+      merged.load[m] = round1((merged.load[m] || 0) + part.load[m]);
+    });
+    merged.kcal += part.kcal;
+    merged.durationSec += part.durationSec;
+  });
+
+  merged.muscles = Object.keys(merged.load).sort();
+  merged.kcal = Math.round(merged.kcal);
+  merged.durationSec = Math.round(merged.durationSec);
+  merged.durationMin = Math.round(merged.durationSec / 60);
+  return merged;
+}
+
+function normaliseWorkoutText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[\u00d7\u2715\u22c5\u00b7]/g, ' x ')   // × ✕ ⋅ ·
+    .replace(/[^a-z0-9.\sx]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * All exercise-name hits with their character span in the normalised text.
+ * Walks the text left to right, always taking the longest alias available at
+ * each position so "bench press" is never chopped into "bench" + "press".
+ */
+function findExerciseSpans(text) {
+  const spans = [];
+  let i = 0;
+  while (i < text.length) {
+    let hit = null;
+    for (let a = 0; a < EXERCISE_LOOKUP.length; a++) {
+      const alias = EXERCISE_LOOKUP[a][0];
+      if (text.substr(i, alias.length) !== alias) continue;
+      const before = i === 0 ? ' ' : text.charAt(i - 1);
+      const after = text.charAt(i + alias.length) || ' ';
+      // Word-boundary guard so "row" does not match "rowing" or "arrow".
+      if (!/[^a-z]/.test(before) || before.match(/[a-z]/)) continue;
+      if (after.match(/[a-z]/)) continue;
+      hit = { alias: alias, exercise: EXERCISE_LOOKUP[a][1], start: i, end: i + alias.length };
+      break;
+    }
+    if (hit) { spans.push(hit); i = hit.end; }
+    else i++;
+  }
+  return spans;
+}
+
+function findModifierSpans(text) {
+  const spans = [];
+  const taken = [];
+  MODIFIER_PATTERNS.forEach(function (p) {
+    const re = new RegExp(p.re.source, 'g');
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const span = {
+        kind: p.kind,
+        start: m.index,
+        end: m.index + m[0].length,
+        raw: m[0],
+        text: m
+      };
+      const clash = taken.some(function (t) { return span.start < t.end && t.start < span.end; });
+      if (!clash) { spans.push(span); taken.push(span); }
+    }
+  });
+  return spans;
+}
+
+function distanceToSpan(mod, span) {
+  if (mod.end <= span.start) return span.start - mod.end;
+  if (span.end <= mod.start) return mod.start - span.end;
+  return 0;
+}
+
+/**
+ * Which exercise does this modifier belong to?
+ *
+ * Nearest wins, and on a tie the exercise to the RIGHT wins, because people
+ * write the count before the movement: "10 push ups 10 dips" has both numbers
+ * one character from an exercise, and the first 10 belongs to push-ups while
+ * the second belongs to dips.
+ */
+function ownerOfModifier(mod, spans) {
+  let best = null, bestDist = Infinity;
+  for (let i = 0; i < spans.length; i++) {
+    const d = distanceToSpan(mod, spans[i]);
+    if (d < bestDist) { bestDist = d; best = i; }
+    else if (d === bestDist) best = i;   // later span wins the tie
+  }
+  return best;
+}
+
+/**
+ * Per-muscle effort, used to colour the body map by how hard it was trained.
+ *
+ * intensity = (7-day load) / target weekly load
+ *   0      -> nothing in the last week
+ *   0.25   -> a light session
+ *   0.6    -> solid training
+ *   1.0    -> a hard week
+ *   1.6+   -> pushed hard / overreaching
+ *
+ * When a muscle has a long enough history we compare against its OWN average
+ * week, so someone who trains 3x a week is not permanently red while someone
+ * who trains once is never red either.
+ */
+const DEFAULT_WEEKLY_TARGET = 450;
+const EFFORT_LEVELS = [0.25, 0.6, 1.0, 1.6];
+
+function effortLevelFor(intensity) {
+  if (!intensity || intensity <= 0) return 0;
+  let level = 0;
+  for (let i = 0; i < EFFORT_LEVELS.length; i++) {
+    if (intensity >= EFFORT_LEVELS[i]) level = i + 1;
+  }
+  return level;
+}
+
+/**
+ * @param {Object} byDay { 'YYYY-MM-DD': { chest: 12.3, ... } }
+ * @returns per-muscle 7-day load, own-average weekly load, intensity, level
+ */
+function muscleEffort(byDay, today, totalLoad) {
+  const out = {};
+  const sevenDaysAgo = dateOffset(-6);
+  const totalDays = Object.keys(byDay).length || 0;
+
+  MUSCLES.forEach(function (m) {
+    const days = Object.keys(byDay).filter(function (d) {
+      return d >= sevenDaysAgo && d <= today && byDay[d] && byDay[d][m];
+    });
+    let load7 = 0;
+    days.forEach(function (d) { load7 += byDay[d][m]; });
+    load7 = round1(load7);
+
+    // Own average weekly load, or the default target until there is history.
+    const allTime = Object.keys(byDay).reduce(function (acc, d) {
+      return acc + (byDay[d] && byDay[d][m] ? byDay[d][m] : 0);
+    }, 0);
+    const weeklyAvg = totalDays >= 14 ? round1(allTime / (totalDays / 7)) : DEFAULT_WEEKLY_TARGET;
+    const target = weeklyAvg > 1 ? weeklyAvg : DEFAULT_WEEKLY_TARGET;
+
+    const intensity = round1(load7 / target);
+    out[m] = {
+      load7d: load7,
+      sessions7d: days.length,
+      weeklyAvg: weeklyAvg,
+      intensity: intensity,
+      level: effortLevelFor(intensity)
+    };
+  });
+  return out;
+}
+
 // ============================================================================
 // SETUP
 // ============================================================================
@@ -99,6 +720,7 @@ const MUSCLE_KEYWORDS = {
 /** Run once from the Apps Script editor. Creates + formats all tabs. */
 function setupSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const added = [];
   SCHEMAS.forEach(function (schema) {
     let sheet = ss.getSheetByName(schema.name);
     if (!sheet) sheet = ss.insertSheet(schema.name);
@@ -107,10 +729,23 @@ function setupSheets() {
       sheet.getRange(1, 1, 1, schema.headers.length).setFontWeight('bold');
       sheet.getRange(1, 1, 1, schema.headers.length).setBackground('#F3F4F6');
       sheet.setFrozenRows(1);
+    } else {
+      // Existing sheet from an older version: append any new columns by header
+      // name so stored rows keep their data and setup stays re-runnable.
+      const current = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      schema.headers.forEach(function (header, i) {
+        if (current.indexOf(header) >= 0) return;
+        const col = sheet.getLastColumn() + 1;
+        sheet.getRange(1, col).setValue(header);
+        sheet.getRange(1, col).setFontWeight('bold');
+        sheet.getRange(1, col).setBackground('#F3F4F6');
+        added.push(schema.name + ' -> ' + header);
+      });
     }
   });
   SpreadsheetApp.flush();
-  return 'Sheets ready: ' + SCHEMAS.map(function (s) { return s.name; }).join(', ');
+  return 'Sheets ready: ' + SCHEMAS.map(function (s) { return s.name; }).join(', ') +
+    (added.length ? ' | added columns: ' + added.join(', ') : '');
 }
 
 /** Health check. Open the /exec URL in a browser: you should see JSON. */
@@ -164,6 +799,9 @@ const ROUTES = {
   'ping': function () { return { ok: true, pong: true, now: new Date().toISOString() }; },
   'state': getState,
   'parse': parseAction,
+  'parse.workout': function (r) { return parseWorkoutAction(r); },
+  'parse.image': function (r) { return visionAction(r); },
+  'chat': function (r) { return assistantAction(r); },
   'gemini.test': function () { return geminiTest(); },
   'log.food': function (r) { return logFood(r); },
   'food.cache': function (r) { return cacheFood(r); },
@@ -265,7 +903,10 @@ function foodCache() {
       protein: num(rows[i][5]),
       carbs: num(rows[i][6]),
       fat: num(rows[i][7]),
-      uses: num(rows[i][8])
+      uses: num(rows[i][8]),
+      // Edible weight of ONE reference unit, so the client can convert the
+      // library entry between "1 slice" and grams without another AI call.
+      gramsPerRef: num(rows[i][10])
     });
   }
   return out;
@@ -312,19 +953,34 @@ function workoutState() {
   const recent = [];
   const muscleLast = {};
   const muscleCount7 = {};
+  const byDay = {};
   MUSCLES.forEach(function (m) { muscleLast[m] = null; muscleCount7[m] = 0; });
+
+  const loadCol = columnIndex(sheet, SHEETS.WORKOUTS, 'Muscle Load (JSON)');
 
   for (let i = rows.length - 1; i >= 1; i--) {
     const d = rowDateStr(rows[i][1]);
     const muscles = splitList(rows[i][5]);
+    const storedLoad = loadCol !== -1 ? parseLoadCell(rows[i][loadCol]) : null;
     const rec = {
       rowId: i + 1,
       date: d,
       name: rows[i][2],
       exercises: rows[i][3],
       durationMin: num(rows[i][4]),
-      muscles: muscles
+      muscles: muscles,
+      load: storedLoad
     };
+
+    // Old rows have no stored load. Rather than show them as untrained, derive
+    // an estimate from the raw exercise text so history still colours correctly.
+    const load = storedLoad || (d ? deriveRowLoad(rec, d) : null);
+    if (load) {
+      if (!byDay[d]) byDay[d] = {};
+      Object.keys(load).forEach(function (m) {
+        byDay[d][m] = round1((byDay[d][m] || 0) + num(load[m]));
+      });
+    }
 
     muscles.forEach(function (m) {
       if (muscleLast[m] === null || d > muscleLast[m]) muscleLast[m] = d;
@@ -335,6 +991,7 @@ function workoutState() {
     if (recent.length < 30) recent.push(rec);
   }
 
+  const effort = muscleEffort(byDay, today);
   const muscleStatus = {};
   MUSCLES.forEach(function (m) {
     const last = muscleLast[m];
@@ -343,11 +1000,372 @@ function workoutState() {
       trained: daysAgo !== null && daysAgo <= 6,
       daysAgo: daysAgo,
       sessions7d: muscleCount7[m],
-      stale: daysAgo !== null && daysAgo > 13
+      stale: daysAgo !== null && daysAgo > 13,
+      load7d: effort[m].load7d,
+      intensity: effort[m].intensity,
+      level: effort[m].level
     };
   });
 
-  return { today: todayList, recent: recent, muscleStatus: muscleStatus };
+  let kcal7 = 0;
+  Object.keys(byDay).forEach(function (d) {
+    if (d >= dateOffset(-6) && d <= today) {
+      Object.keys(byDay[d]).forEach(function (m) { kcal7 += byDay[d][m]; });
+    }
+  });
+
+  return {
+    today: todayList,
+    recent: recent,
+    muscleStatus: muscleStatus,
+    effort: effort,
+    weeklyLoad: round1(kcal7)
+  };
+}
+
+/**
+ * Every write the chatbot may perform, each one a thin wrapper over the existing
+ * API functions so there is exactly one code path per action and the assistant
+ * can never invent behaviour the normal UI does not have.
+ */
+const ASSISTANT_ACTIONS = {
+  'log.food': function (p) {
+    const r = logFood({ items: p.items, source: p.source || 'Assistant' });
+    return r.ok ? summarise(r, 'Logged ' + r.logged + ' food item' + (r.logged === 1 ? '' : 's')) : r;
+  },
+  'log.workout': function (p) {
+    const r = logWorkout({
+      name: p.name, exercises: p.exercises,
+      durationMin: num(p.durationMin), muscles: p.muscles
+    });
+    if (!r.ok) return r;
+    const parts = [];
+    if (r.exercises && r.exercises.length) {
+      parts.push(r.exercises.map(function (e) {
+        return e.name + ' ' + (e.seconds ? e.seconds + 's' : e.sets + 'x' + e.reps);
+      }).join(', '));
+    }
+    if (r.kcal) parts.push(r.kcal + ' kcal');
+    return summarise(r, 'Logged workout' + (parts.length ? ': ' + parts.join(' | ') : ''));
+  },
+  'log.expense': function (p) {
+    const r = logExpense({ amount: p.amount, category: p.category, merchant: p.merchant, notes: p.notes });
+    return r.ok ? summarise(r, 'Logged ' + num(p.amount) + ' ' + (p.category || 'expense')) : r;
+  },
+  'log.study': function (p) {
+    const r = logStudy({ subject: p.subject, minutes: num(p.minutes), notes: p.notes });
+    return r.ok ? summarise(r, 'Logged ' + num(p.minutes) + ' min study: ' + (p.subject || 'Study')) : r;
+  },
+  'add.task': function (p) {
+    const r = addTask({ task: p.task, due: p.due, priority: p.priority });
+    return r.ok ? summarise(r, 'Added task: ' + p.task) : r;
+  },
+  'toggle.task': function (p) {
+    const r = toggleTask({ rowId: num(p.rowId) });
+    return r.ok ? summarise(r, 'Updated task #' + num(p.rowId)) : r;
+  },
+  'add.class': function (p) {
+    const r = addClass({ day: p.day, time: p.time, subject: p.subject, room: p.room, notes: p.notes });
+    return r.ok ? summarise(r, 'Added class: ' + (p.subject || p.day)) : r;
+  },
+  'save.goals': function (p) {
+    const r = saveGoals(p.goals || {});
+    return r.ok ? summarise(r, 'Updated your goals') : r;
+  },
+  'delete': function (p) {
+    const r = deleteEntry({ sheet: p.sheet, rowId: num(p.rowId) });
+    return r.ok ? summarise(r, 'Deleted ' + (p.sheet || 'entry') + ' #' + num(p.rowId)) : r;
+  }
+};
+
+/** Attach the fresh state + a human summary so the client can show both. */
+function summarise(result, message) {
+  return {
+    ok: true,
+    message: message,
+    rowId: result.rowId,
+    nutrition: result.today ? nutritionState().today : undefined,
+    state: getState()
+  };
+}
+
+/** Actions that change data. Anything not in this list is rejected outright. */
+const WRITE_ACTIONS = Object.keys(ASSISTANT_ACTIONS);
+
+/**
+ * Conversational assistant.
+ *
+ * Design rules that keep it trustworthy:
+ *  - the model may only choose from a fixed action allow-list;
+ *  - it is given the user's REAL current state, so it can answer questions;
+ *  - when required detail is missing it returns a question and NO actions, and
+ *    nothing is written until the user answers;
+ *  - every action is executed server-side through the same functions the UI
+ *    uses, and each failure is reported rather than swallowed.
+ */
+const ASSISTANT_SCHEMA = {
+  type: 'object',
+  properties: {
+    reply: { type: 'string' },
+    understood: { type: 'boolean' },
+    // Set when the assistant needs one specific fact before it can act.
+    question: { type: 'string' },
+    pending: { type: 'string', enum: ['none', 'workout', 'food', 'expense', 'study', 'task', 'class', 'goals'] },
+    actions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: WRITE_ACTIONS },
+          items: { type: 'array', items: { type: 'object', properties: {}, additionalProperties: true } },
+          name: { type: 'string' },
+          exercises: { type: 'string' },
+          durationMin: { type: 'number' },
+          muscles: { type: 'array', items: { type: 'string', enum: MUSCLES } },
+          amount: { type: 'number' },
+          category: { type: 'string' },
+          merchant: { type: 'string' },
+          notes: { type: 'string' },
+          subject: { type: 'string' },
+          minutes: { type: 'number' },
+          task: { type: 'string' },
+          due: { type: 'string' },
+          priority: { type: 'string' },
+          rowId: { type: 'number' },
+          day: { type: 'string' },
+          time: { type: 'string' },
+          room: { type: 'string' },
+          sheet: { type: 'string' },
+          goals: { type: 'object', properties: {}, additionalProperties: true }
+        },
+        required: ['action']
+      }
+    }
+  },
+  required: ['reply', 'understood']
+};
+
+function assistantAction(req) {
+  const message = String(req.message || req.text || '').trim();
+  if (!message) return { ok: false, error: 'Say something first' };
+  if (!getGeminiKey()) {
+    // Still useful without a key: answer from state for the common questions.
+    return localAssistant(message, req.history);
+  }
+
+  const history = Array.isArray(req.history) ? req.history.slice(-8) : [];
+  const prompt =
+    assistantSystemPrompt(stateForAssistant()) +
+    '\n\nCONVERSATION SO FAR:\n' +
+    (history.length
+      ? history.map(function (h) { return (h.role === 'assistant' ? 'Assistant: ' : 'User: ') + String(h.text || '').slice(0, 400); }).join('\n')
+      : '(this is the first message)') +
+    '\n\nUser: ' + message + '\n\nReturn JSON only.';
+
+  const res = callGeminiParts([{ text: prompt }], ASSISTANT_SCHEMA, { temperature: 0.3 });
+  if (!res.ok) {
+    // Fall back rather than fail: the deterministic path still answers.
+    const fb = localAssistant(message, history);
+    fb.source = 'local-fallback';
+    fb.geminiError = res.error;
+    return fb;
+  }
+
+  const d = res.data || {};
+  const applied = [];
+  const failures = [];
+
+  // A question means "not enough information": never write anything in that turn.
+  const wantsQuestion = !!d.question || (d.pending && d.pending !== 'none');
+  const actions = wantsQuestion ? [] : (Array.isArray(d.actions) ? d.actions : []);
+
+  actions.slice(0, 6).forEach(function (a) {
+    const fn = ASSISTANT_ACTIONS[a.action];
+    if (!fn) { failures.push('Unsupported action: ' + a.action); return; }
+    try {
+      const r = fn(a);
+      if (r && r.ok) applied.push(r.message);
+      else failures.push((r && r.error) || (a.action + ' failed'));
+    } catch (e) {
+      failures.push(a.action + ': ' + String(e));
+    }
+  });
+
+  return {
+    ok: true,
+    source: 'gemini',
+    reply: String(d.reply || '').trim(),
+    understood: d.understood !== false,
+    question: wantsQuestion ? String(d.question || '').trim() : '',
+    pending: wantsQuestion ? (d.pending || 'none') : 'none',
+    applied: applied,
+    changes: applied,
+    failed: failures,
+    state: getState()
+  };
+}
+
+/** Compact view of the user's real data, for grounding the conversation. */
+function stateForAssistant() {
+  const s = getState();
+  const w = s.workouts;
+  const effortLines = MUSCLES.map(function (m) {
+    const st = w.muscleStatus[m];
+    const e = w.effort && w.effort[m];
+    if (!st.daysAgo && st.daysAgo !== 0) return null;
+    return m + ': last ' + st.daysAgo + 'd ago, ' + st.sessions7d + ' sessions/7d, effort ' +
+      (e ? e.level + '/5 (intensity ' + e.intensity + ')' : 'unknown');
+  }).filter(Boolean);
+
+  const tasks = s.tasks.slice(0, 20).map(function (t) {
+    return '#' + t.rowId + ' "' + t.task + '"' + (t.due ? ' due ' + t.due : '') +
+      (t.status && t.status !== 'Pending' ? ' [' + t.status + ']' : '') + ' (' + (t.priority || 'Normal') + ')';
+  });
+
+  const recentFoods = (s.foods || []).slice(0, 20).map(function (f) {
+    return f.name + ' (' + f.per + f.unit + ' = ' + f.calories + ' kcal)';
+  });
+
+  return [
+    'Today is ' + todayStr() + '.',
+    'Nutrition today: ' + s.nutrition.today.calories + ' kcal, protein ' + s.nutrition.today.protein +
+      ' g, carbs ' + s.nutrition.today.carbs + ' g, fat ' + s.nutrition.today.fat + ' g. Goal: ' +
+      s.goals.calories + ' kcal / ' + s.goals.protein + ' g protein.',
+    'Logged today: ' + s.nutrition.recent.length + ' food entries.',
+    'Spending this month: ' + s.expenses.monthSpent + ' ' + s.goals.currency + ' of ' + s.goals.monthBudget + '.',
+    'Study today: ' + s.study.todayMinutes + ' min (goal ' + s.goals.studyMinutes + ').',
+    'Workouts today: ' + w.today.length + ', recent: ' + w.recent.length + '.',
+    'Muscle effort: ' + (effortLines.length ? effortLines.join('; ') : 'nothing trained yet'),
+    'Tasks: ' + (tasks.length ? tasks.join(' | ') : 'none'),
+    'Upcoming classes: ' + ((s.classes || []).slice(0, 8).map(function (c) {
+      return c.day + ' ' + (c.time || '') + ' ' + c.subject;
+    }).join(' | ') || 'none'),
+    'Known foods: ' + (recentFoods.length ? recentFoods.slice(0, 12).join(' | ') : 'none cached yet')
+  ].join('\n');
+}
+
+function assistantSystemPrompt(state) {
+  return [
+    'You are the assistant inside a personal tracker app (ThirdPerspective) that logs food,',
+    'workouts, expenses, study time, tasks and classes.',
+    '',
+    'CURRENT USER DATA:',
+    state,
+    '',
+    'HOW TO BEHAVE:',
+    '- Be conversational and brief, like a competent human assistant. No filler, no lists of',
+    '  capabilities, no "I can help with..." preamble.',
+    '- If the message is a question about the data above, answer it from that data in `reply`.',
+    '  Do not invent numbers.',
+    '- If the message is an instruction to log or change something, emit the matching',
+    '  `actions` AND write a short confirmation in `reply`.',
+    '- If a required detail is missing, set `question` to ONE short question, set `pending`',
+    '  to what you are waiting for, and emit NO actions. Never guess a value that changes data.',
+    '- Muscle groups you may use: ' + MUSCLES.join(', ') + '.',
+    '- Actions you may emit: ' + WRITE_ACTIONS.join(', ') + '.',
+    '  For a workout, put the whole line the user said into `exercises` (for example',
+    '  "3x12 squats, 4x8 bench 60kg") and list the muscle groups it trained in `muscles`.',
+    '  For food, `items` is an array of {name, qty, unit, calories, protein, carbs, fat}.',
+    '- Multiple independent logs in one message are fine: emit one action per log.',
+    '- After actions are applied the app shows the changes, so keep `reply` to one or two',
+    '  sentences and do not repeat every field back.'
+  ].join('\n');
+}
+
+/**
+ * Deterministic assistant used when there is no API key or Gemini failed.
+ * Answers the questions that need no AI, and refuses to write rather than guess.
+ */
+function localAssistant(message, history) {
+  const t = message.toLowerCase();
+  const s = getState();
+
+  const ask = function (reply, question, pending) {
+    return {
+      ok: true, source: 'local', reply: reply, understood: true,
+      question: question || '', pending: pending || 'none',
+      applied: [], changes: [], failed: [], state: s
+    };
+  };
+
+  if (/\b(cal|kcal|calorie|protein|carb|fat|macro|eat|eaten|food|nutrition)\b/.test(t)) {
+    return ask('Today: ' + s.nutrition.today.calories + ' kcal, ' + s.nutrition.today.protein + ' g protein, ' +
+      s.nutrition.today.carbs + ' g carbs, ' + s.nutrition.today.fat + ' g fat. Goal is ' +
+      s.goals.calories + ' kcal.', '', 'none');
+  }
+  if (/\b(workout|train|muscle|gym|rep|set|squat|bench|ran)\b/.test(t)) {
+    const trained = MUSCLES.filter(function (m) { return s.workouts.muscleStatus[m].daysAgo !== null; });
+    return ask(trained.length
+      ? 'Muscles trained recently: ' + trained.join(', ') + '. Weekly training load is ' +
+        s.workouts.weeklyLoad + '.'
+      : 'Nothing logged as trained yet.', '', 'none');
+  }
+  if (/\b(spent|spend|expense|budget|money|price|bought)\b/.test(t)) {
+    return ask('This month: ' + s.expenses.monthSpent + ' ' + s.goals.currency + ' spent of a ' +
+      s.goals.monthBudget + ' budget.', '', 'none');
+  }
+  if (/\b(study|studied|revision|revise|homework|exam)\b/.test(t)) {
+    return ask('Study time today: ' + s.study.todayMinutes + ' min, goal ' + s.goals.studyMinutes + ' min.', '', 'none');
+  }
+  if (/\b(task|todo|due|reminder)\b/.test(t)) {
+    const open = s.tasks.filter(function (x) { return x.status !== 'Completed'; });
+    return ask(open.length
+      ? 'You have ' + open.length + ' open task' + (open.length === 1 ? '' : 's') + ': ' +
+        open.slice(0, 5).map(function (x) { return x.task; }).join(', ')
+      : 'No open tasks.');
+  }
+  if (/\b(class|timetable|schedule|lecture)\b/.test(t)) {
+    return ask('Classes: ' + ((s.classes || []).map(function (c) {
+      return c.day + ' ' + (c.time || '') + ' ' + c.subject;
+    }).join(', ') || 'none scheduled'));
+  }
+  // Anything that looks like a write is refused rather than half-understood.
+  if (/\b(log|add|record|save|track|spent|did|trained)\b/.test(t)) {
+    return ask('I can answer questions about your data, but logging needs the AI key to ' +
+      'understand free text. Add GEMINI_API_KEY in Script Properties to enable it.',
+      'What exactly should I log, and how much?', 'none');
+  }
+  return ask('I can tell you about your food, workouts, spending, study time, tasks and classes. ' +
+    'Ask me about any of those.');
+}
+
+/** Column index of a header on a sheet, or -1 when it is not there yet. */
+function columnIndex(sheet, sheetName, header) {
+  if (!sheet) return -1;
+  const schema = SCHEMAS.filter(function (s) { return s.name === sheetName; })[0];
+  const want = schema ? schema.headers.indexOf(header) : -1;
+  if (want < 0) return -1;
+  const lastCol = sheet.getLastColumn();
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  return headers.indexOf(header);
+}
+
+/** Stored muscle load is JSON; be forgiving about anything unexpected. */
+function parseLoadCell(v) {
+  if (!v) return null;
+  if (typeof v === 'object') return v;
+  try {
+    const obj = JSON.parse(String(v));
+    return (obj && typeof obj === 'object') ? obj : null;
+  } catch (e) { return null; }
+}
+
+/**
+ * Best-effort effort estimate for a workout logged before this feature existed,
+ * or one where the client did not send a load. Uses the same text parser so the
+ * numbers match what a fresh entry would produce.
+ */
+function deriveRowLoad(rec, date) {
+  const parsed = parseWorkoutLine(rec.exercises || rec.name || '', bodyWeightKg());
+  if (!parsed.matched || !parsed.muscles.length) {
+    // Nothing recognisable: fall back to a flat session so a plain muscle entry
+    // still registers as "trained", just without fine-grained effort.
+    if (!rec.muscles.length) return null;
+    const flat = {};
+    rec.muscles.forEach(function (m) { if (isPaintableMuscle(m)) flat[m] = 200; });
+    return flat;
+  }
+  return parsed.load;
 }
 
 function studyState() {
@@ -414,6 +1432,33 @@ function parseAction(req) {
   return { ok: true, source: 'local', ...parseLocally(text) };
 }
 
+/**
+ * Workout-only parse. The exercise parser is deterministic and needs no AI, so
+ * this is the endpoint the client calls while the user is still typing.
+ */
+function parseWorkoutAction(req) {
+  const text = String(req.text || '').trim();
+  if (!text) return { ok: true, kind: 'workout', exercises: [], muscles: [], load: {}, matched: false };
+  const parsed = parseWorkoutLine(text, bodyWeightKg());
+  if (!parsed.matched && !WORKOUT_WORDS.test(text.toLowerCase())) {
+    return { ok: true, kind: 'unknown', exercises: [], muscles: [], load: {}, matched: false };
+  }
+  return {
+    ok: true,
+    kind: 'workout',
+    source: 'local',
+    matched: parsed.matched,
+    exercisesText: text,
+    exercises: parsed.exercises,
+    muscles: parsed.muscles,
+    load: parsed.load,
+    kcal: parsed.kcal,
+    durationMin: parsed.durationMin,
+    // A session with no named movement needs the user to pick muscles by hand.
+    needsMuscles: parsed.muscles.length === 0
+  };
+}
+
 function geminiTest() {
   if (!getGeminiKey()) return { ok: false, error: 'GEMINI_API_KEY is not set in Script Properties' };
   const res = callGemini(
@@ -450,6 +1495,22 @@ const PARSE_SCHEMA = {
     workoutName: { type: 'string' },
     durationMin: { type: 'number' },
     muscles: { type: 'array', items: { type: 'string', enum: MUSCLES } },
+    // Per-exercise detail so effort can be scored instead of guessed from the
+    // raw line. `sets`/`reps` of 0 mean "not stated"; 1 is the sane default.
+    exercises: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          sets: { type: 'number' },
+          reps: { type: 'number' },
+          seconds: { type: 'number' },
+          weightKg: { type: 'number' }
+        },
+        required: ['name', 'sets', 'reps', 'seconds', 'weightKg']
+      }
+    },
     subject: { type: 'string' },
     amount: { type: 'number' },
     category: { type: 'string' },
@@ -482,7 +1543,15 @@ function parseWithGemini(text) {
     'WORKOUT RULES:\n' +
     '- muscles must be chosen from: ' + MUSCLES.join(', ') + '.\n' +
     '- Be generous: barbell back squat also trains quads, glutes, hamstrings.\n' +
-    '- durationMin is the session length in minutes; use 0 if not stated.\n\n' +
+    '- durationMin is the session length in minutes; use 0 if not stated.\n' +
+    '- Break the line into `exercises`, one entry per distinct movement.\n' +
+    '  `sets` and `reps` must reflect what the user actually said: "3x12 squats"\n' +
+    '  is 3 sets of 12. Use sets=1 when no set count is stated. Use reps=0 and\n' +
+    '  put the hold length in `seconds` for timed moves like plank.\n' +
+    '- `weightKg` is external weight in KILOGRAMS: convert from lb if the user\n' +
+    '  used pounds (1 lb = 0.4536 kg), and use 0 for bodyweight movements.\n' +
+    '- If the user wrote sets and reps as separate numbers with no x, e.g.\n' +
+    '  "12 reps 3 sets", still report sets=3 reps=12.\n\n' +
     'Return JSON only.\n\n' +
     'USER LINE: ' + text;
 
@@ -496,10 +1565,20 @@ function parseWithGemini(text) {
     out.foods = d.foods.map(serveFood);
   }
   if (out.kind === 'workout') {
+    const local = parseWorkoutLine(text, bodyWeightKg());
+    // If the model did not return structured exercises, the local parser still
+    // can, so effort is never lost just because Gemini answered loosely.
+    const detail = (d.exercises && d.exercises.length) ? d.exercises : null;
     out.workoutName = d.workoutName || 'Workout';
-    out.durationMin = num(d.durationMin);
-    out.muscles = normaliseMuscles(d.muscles);
+    out.durationMin = num(d.durationMin) || local.durationMin;
     out.exercises = text;
+    const scored = detail ? scoreWorkoutExercises(detail, bodyWeightKg()) : local;
+    out.exercisesParsed = scored.exercises;
+    out.load = scored.load;
+    out.kcal = scored.kcal;
+    out.muscles = normaliseMuscles(d.muscles).length
+      ? normaliseMuscles(d.muscles)
+      : (scored.muscles.length ? scored.muscles : local.muscles);
   }
   if (out.kind === 'study') { out.subject = d.subject || 'Study'; out.minutes = num(d.durationMin) || 30; }
   if (out.kind === 'expense') { out.amount = num(d.amount); out.category = d.category || 'Miscellaneous'; out.merchant = d.merchant || ''; }
@@ -511,12 +1590,123 @@ function parseWithGemini(text) {
   return out;
 }
 
+/**
+ * Score exercises the AI returned. Each name is resolved against the knowledge
+ * base; an unknown movement still contributes through MUSCLE_KEYWORDS so it is
+ * never silently dropped.
+ */
+function scoreWorkoutExercises(list, bodyweightKg) {
+  const bw = bodyweightKg || 70;
+  const exercises = [];
+  const load = {};
+  let kcal = 0;
+
+  (list || []).forEach(function (raw) {
+    const name = String(raw.name || '').trim();
+    if (!name) return;
+    const key = resolveExerciseName(name);
+    const def = key ? EXERCISES[key] : null;
+    const sets = num(raw.sets) > 0 ? num(raw.sets) : 1;
+    const seconds = num(raw.seconds) > 0 ? num(raw.seconds) : 0;
+    const reps = num(raw.reps) > 0 ? num(raw.reps) : (seconds ? 0 : 1);
+    const weightKg = num(raw.weightKg);
+    const met = def ? def.met : 5;
+    const isTime = seconds > 0;
+    const effectiveReps = isTime ? Math.max(1, seconds / 10) : reps;
+    const factor = loadFactorFor(weightKg, bw);
+
+    let weights;
+    if (def) weights = def.muscles || {};
+    else weights = keywordMuscleWeights(name);
+    if (!weights || !Object.keys(weights).length) weights = keywordMuscleWeights(name);
+
+    const mus = {};
+    Object.keys(weights || {}).forEach(function (m) {
+      if (!isPaintableMuscle(m)) return;
+      const w = def ? weights[m] : Math.min(1, weights[m]);
+      const value = sets * effectiveReps * met * w * factor;
+      if (value <= 0) return;
+      mus[m] = round1(value);
+      load[m] = round1((load[m] || 0) + value);
+    });
+
+    kcal += (met * 3.5 * bw / 200) * ((sets * effectiveReps) / 60);
+
+    exercises.push({
+      name: def ? def.name : name,
+      known: !!def,
+      sets: round1(sets),
+      reps: isTime ? 0 : round1(reps),
+      seconds: isTime ? round1(seconds) : 0,
+      weightKg: weightKg ? round1(weightKg) : 0,
+      met: met,
+      muscles: Object.keys(mus),
+      load: mus
+    });
+  });
+
+  return {
+    exercises: exercises,
+    muscles: Object.keys(load).sort(),
+    load: load,
+    kcal: Math.round(kcal),
+    matched: exercises.length > 0
+  };
+}
+
+/** Resolve a possibly-abbreviated exercise name to a knowledge-base key. */
+function resolveExerciseName(name) {
+  const raw = String(name || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (EXERCISES[raw]) return raw;
+  if (EXERCISE_ALIAS_MAP[raw]) return EXERCISE_ALIAS_MAP[raw];
+  const spaced = raw.replace(/[^a-z0-9]+/g, ' ').trim();
+  if (EXERCISES[spaced]) return spaced;
+  if (EXERCISE_ALIAS_MAP[spaced]) return EXERCISE_ALIAS_MAP[spaced];
+  const singular = spaced.replace(/s$/, '');
+  if (EXERCISES[singular]) return singular;
+  if (EXERCISE_ALIAS_MAP[singular]) return EXERCISE_ALIAS_MAP[singular];
+  const hyphen = raw.replace(/[^a-z0-9]+/g, '-');
+  if (EXERCISES[hyphen]) return hyphen;
+  if (EXERCISE_ALIAS_MAP[hyphen]) return EXERCISE_ALIAS_MAP[hyphen];
+  const hyphSing = hyphen.replace(/s$/, '');
+  if (EXERCISES[hyphSing]) return hyphSing;
+  if (EXERCISE_ALIAS_MAP[hyphSing]) return EXERCISE_ALIAS_MAP[hyphSing];
+  return null;
+}
+
+/** Fallback muscle attribution from MUSCLE_KEYWORDS, for unknown movements. */
+function keywordMuscleWeights(text) {
+  const t = String(text || '').toLowerCase();
+  const out = {};
+  MUSCLES.forEach(function (m) {
+    const words = MUSCLE_KEYWORDS[m] || [];
+    for (let i = 0; i < words.length; i++) {
+      if (t.indexOf(words[i]) >= 0) { out[m] = 0.8; return; }
+    }
+  });
+  return out;
+}
+
 /** No-AI fallback: enough for simple, unambiguous lines. */
 function parseLocally(text) {
   const t = text.toLowerCase();
-  if (/\b(bench|squat|deadlift|pushup|push-up|pull-?up|curl|press|raise|workout|run|row|lunge|plank)\b/.test(t) ||
-      /\d+\s?(kg|lbs)\b/.test(t)) {
-    return { kind: 'workout', workoutName: text.slice(0, 40), durationMin: 0, muscles: detectMuscles(text), exercises: text };
+  const parsed = parseWorkoutLine(text, bodyWeightKg());
+  // The exercise knowledge base is a far better signal than a regex list: it
+  // knows ~100 movements, so "3x12 calf raises" needs no special-casing.
+  if (parsed.matched || WORKOUT_WORDS.test(t) || /\d+\s?(kg|lbs)\b/.test(t)) {
+    return {
+      kind: 'workout',
+      workoutName: text.slice(0, 40),
+      durationMin: parsed.durationMin,
+      muscles: parsed.muscles.length ? parsed.muscles : detectMuscles(text),
+      exercises: text,
+      exercisesParsed: parsed.exercises,
+      load: parsed.load,
+      kcal: parsed.kcal,
+      // A session with no named movement still deserves to be logged.
+      generic: !parsed.matched
+    };
   }
   if (/^\s*(study|studied|read|revise)\b/.test(t)) {
     const m = text.match(/(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes)/i);
@@ -541,26 +1731,41 @@ function localFoodStub(text) {
   const qtyMatch = text.match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
   const qty = qtyMatch ? parseFloat(qtyMatch[1]) : 1;
   const name = (qtyMatch ? qtyMatch[2] : text).trim() || 'Food';
+  const unit = qtyMatch ? 'serving' : 'serving';
   return [serveFood({
-    name: name, qty: qty, unit: 'serving',
-    refAmount: 1, refUnit: 'serving',
-    calories: 0, protein: 0, carbs: 0, fat: 0
+    name: name, qty: qty, unit: unit,
+    refAmount: 1, refUnit: unit,
+    calories: 0, protein: 0, carbs: 0, fat: 0,
+    grams: estimateGrams(qty, unit)
   })].map(function (f) { f.estimated = true; return f; });
 }
 
-function callGemini(prompt, schema) {
+/**
+ * Gemini REST call.
+ *
+ * `parts` lets a caller attach an inline image alongside the text prompt, which
+ * is what makes food-photo recognition possible. Keeping it generic means the
+ * chatbot and the food-photo endpoint share one transport and one error shape.
+ */
+function callGeminiParts(parts, schema, options) {
+  const opts = options || {};
   const key = getGeminiKey();
   if (!key) return { ok: false, error: 'No GEMINI_API_KEY' };
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
     CONFIG.GEMINI_MODEL + ':generateContent?key=' + encodeURIComponent(key);
   const body = {
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    contents: [{ role: opts.role || 'user', parts: parts }],
     generationConfig: {
-      responseMimeType: 'application/json',
-      temperature: 0.1,
-      responseSchema: schema
+      responseMimeType: opts.raw ? undefined : 'application/json',
+      temperature: opts.temperature === undefined ? 0.1 : opts.temperature,
+      maxOutputTokens: opts.maxOutputTokens,
+      responseSchema: opts.raw ? undefined : schema
     }
   };
+  // Gemini rejects undefined keys, so drop the ones this call does not use.
+  Object.keys(body.generationConfig).forEach(function (k) {
+    if (body.generationConfig[k] === undefined) delete body.generationConfig[k];
+  });
   try {
     const res = UrlFetchApp.fetch(url, {
       method: 'post',
@@ -571,13 +1776,182 @@ function callGemini(prompt, schema) {
     const text = res.getContentText();
     if (res.getResponseCode() !== 200) return { ok: false, error: 'HTTP ' + res.getResponseCode() + ': ' + text.slice(0, 400) };
     const jsonOut = JSON.parse(text);
-    const part = jsonOut.candidates && jsonOut.candidates[0] && jsonOut.candidates[0].content &&
-      jsonOut.candidates[0].content.parts && jsonOut.candidates[0].content.parts[0];
+    const cand = jsonOut.candidates && jsonOut.candidates[0];
+    const part = cand && cand.content && cand.content.parts && cand.content.parts[0];
     if (!part) return { ok: false, error: 'Empty response: ' + text.slice(0, 300) };
+    // A finishReason of SAFETY means the image was refused, not that it is absent.
+    if (cand.finishReason && cand.finishReason !== 'STOP') {
+      return { ok: false, error: 'Blocked (' + cand.finishReason + '): ' + text.slice(0, 200) };
+    }
+    if (opts.raw) return { ok: true, data: part.text };
     return { ok: true, data: JSON.parse(part.text) };
   } catch (e) {
     return { ok: false, error: String(e) };
   }
+}
+
+function callGemini(prompt, schema) {
+  return callGeminiParts([{ text: prompt }], schema);
+}
+
+// ============================================================================
+// VISION: food photos
+// ----------------------------------------------------------------------------
+// The client downscales the photo and sends a bare base64 payload (no data-URL
+// prefix), so the request stays inside the Apps Script payload limit.
+// ============================================================================
+
+const VISION_SCHEMA = {
+  type: 'object',
+  properties: {
+    recognised: { type: 'boolean' },
+    confidence: { type: 'number' },
+    // Shown when the photo is unusable, so the user knows what went wrong.
+    problem: { type: 'string', enum: ['none', 'not_food', 'unclear', 'multiple_items', 'not_edible'] },
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          // Portion as pictured, in the unit the user would say out loud.
+          qty: { type: 'number' },
+          unit: { type: 'string' },
+          // Whole-portion macros for that qty.
+          calories: { type: 'number' },
+          protein: { type: 'number' },
+          carbs: { type: 'number' },
+          fat: { type: 'number' },
+          // Estimated edible weight of the portion, used for the g <-> serving toggle.
+          grams: { type: 'number' },
+          refAmount: { type: 'number' },
+          refUnit: { type: 'string' }
+        },
+        required: ['name', 'qty', 'unit', 'calories', 'protein', 'carbs', 'fat', 'grams', 'refAmount', 'refUnit']
+      }
+    },
+    note: { type: 'string' }
+  },
+  required: ['recognised', 'confidence', 'items']
+};
+
+/**
+ * Accept a bare base64 image (optionally a data URL) and estimate its macros.
+ * Returns the same food shape as the text parser so the UI can merge both.
+ */
+function visionAction(req) {
+  const raw = String(req.image || req.data || '').trim();
+  if (!raw) return { ok: false, error: 'No image received' };
+
+  const image = normaliseImagePayload(raw);
+  if (image.error) return { ok: false, error: image.error };
+  if (!getGeminiKey()) {
+    return { ok: false, error: 'Photo estimates need GEMINI_API_KEY set in Script Properties', needsKey: true };
+  }
+
+  const hint = String(req.hint || '').trim();
+  const prompt =
+    'You are a food recognition and nutrition estimation engine.\n\n' +
+    'TASK: look at the photo and estimate the nutrition of what is visible.\n\n' +
+    'CRITICAL RULES:\n' +
+    '1. Set recognised=false and leave items empty when the photo does not show\n' +
+    '   identifiable food. Do NOT guess a generic "meal" - an honest failure is\n' +
+    '   far more useful than a wrong number.\n' +
+    '2. Use visible cues for portion size: plate/bowl/hand/packaging as a scale\n' +
+    '   reference, and cooked vs raw appearance. Prefer metric units.\n' +
+    '3. `qty` and `unit` describe the portion as pictured, using everyday words:\n' +
+    '   "2 eggs", "1 slice", "150g chicken", "1 bowl of rice".\n' +
+    '4. `calories`, `protein`, `carbs`, `fat` are macros for THAT portion only.\n' +
+    '   2 large eggs ~= 144 kcal in total, not 143 each.\n' +
+    '5. `grams` is the estimated edible weight of that portion. Always estimate it\n' +
+    '   even for counted items (one egg ~= 50 g) because the app converts between\n' +
+    '   grams and servings.\n' +
+    '6. `refAmount`/`refUnit` define the reusable library entry: for weighed or\n' +
+    '   measured foods use refUnit "g" and refAmount 100; for countable items\n' +
+    '   (egg, slice, banana, bowl, cup, piece) use the same word as `unit` and\n' +
+    '   refAmount 1.\n' +
+    '7. List every distinct food in the photo as its own item, including cooking\n' +
+    '   oils or sauces you can see. Do not merge separate items.\n' +
+    '8. `confidence` is 0..1 for how sure you are about the macros overall.\n' +
+    '   Below about 0.45 the user will be shown the numbers as rough estimates.\n' +
+    (hint ? '\nThe user added this context: ' + hint + '\n' : '') +
+    '\nReturn JSON only.';
+
+  const res = callGeminiParts(
+    [{ inline_data: { mime_type: image.mimeType, data: image.base64 } }, { text: prompt }],
+    VISION_SCHEMA
+  );
+  if (!res.ok) return { ok: false, error: res.error };
+
+  const d = res.data || {};
+  if (d.recognised === false || !d.items || !d.items.length) {
+    return {
+      ok: true,
+      recognised: false,
+      source: 'gemini-vision',
+      problem: d.problem && d.problem !== 'none' ? d.problem : 'unclear',
+      note: d.note || 'I could not tell what is in this photo. Try a closer, well-lit shot.',
+      foods: []
+    };
+  }
+
+  const foods = d.items.map(function (it) {
+    const served = serveFood(it);
+    // Carry the gram weight through so the UI can offer the grams toggle.
+    const grams = num(it.grams) || 0;
+    served.grams = grams ? round1(grams) : estimateGrams(served.qty, served.unit);
+    served.estimated = true;
+    return served;
+  });
+
+  return {
+    ok: true,
+    recognised: true,
+    source: 'gemini-vision',
+    confidence: num(d.confidence) || 0,
+    rough: (num(d.confidence) || 0) < 0.45,
+    note: d.note || '',
+    foods: foods
+  };
+}
+
+/** Strip any data-URL prefix and validate the payload before spending tokens. */
+function normaliseImagePayload(raw) {
+  let base64 = raw;
+  let mimeType = 'image/jpeg';
+  const match = String(raw).match(/^data:(image\/[a-zA-Z+]+);base64,(.*)$/s);
+  if (match) {
+    mimeType = match[1].toLowerCase();
+    base64 = match[2];
+  }
+  base64 = String(base64).replace(/\s/g, '');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) return { error: 'Image data is not valid base64' };
+  // ~4 base64 chars per 3 bytes; 3/4 of the string length is the byte count.
+  const bytes = Math.floor(base64.length * 3 / 4);
+  if (bytes > CONFIG.MAX_IMAGE_BYTES) {
+    return { error: 'Image too large (' + Math.round(bytes / 1024) + ' KB). Try a smaller photo.' };
+  }
+  return { base64: base64, mimeType: mimeType, bytes: bytes };
+}
+
+/**
+ * Rough gram weight for counted portions, used when the vision model omits it.
+ * Deliberately conservative: better a slightly wrong default the user can edit
+ * than no conversion available at all.
+ */
+const COUNTED_UNIT_GRAMS = {
+  egg: 50, slice: 30, piece: 60, piece_: 60, cup: 240, bowl: 350, plate: 500,
+  can: 330, bottle: 500, glass: 250, cookie: 30, bar: 60, scoop: 30,
+  handful: 40, banana: 120, apple: 180, orange: 150, croissant: 90,
+  sandwich: 220, burger: 220, tortilla: 45, scoop_: 30, serving: 100
+};
+
+function estimateGrams(qty, unit) {
+  const u = String(unit || '').trim().toLowerCase();
+  const base = COUNTED_UNIT_GRAMS[u];
+  if (base) return round1(base * (num(qty) || 1));
+  if (isWeighedUnit(u)) return round1(num(qty) || 0);
+  return 0;
 }
 
 // ============================================================================
@@ -611,10 +1985,38 @@ function logExpense(req) {
 function logWorkout(req) {
   const muscles = normaliseMuscles(req.muscles);
   if (!muscles.length) return { ok: false, error: 'Pick at least one muscle group' };
+  const bw = bodyWeightKg();
+
+  // Prefer the client's parse, but recompute server-side so effort can never be
+  // faked or lost to an old client that does not know about it yet.
+  const parsed = parseWorkoutLine(req.exercises || '', bw);
+  const clientLoad = req.load ? parseLoadCell(req.load) : null;
+  const load = (clientLoad && Object.keys(clientLoad).length) ? clientLoad : parsed.load;
+  const finalMuscles = parsed.muscles.length ? parsed.muscles : muscles;
+  const duration = num(req.durationMin) || parsed.durationMin || 0;
+  const kcal = parsed.kcal || 0;
+
   const now = new Date();
-  const rowId = append(SHEETS.WORKOUTS, [now, todayStr(), req.name || 'Workout',
-    req.exercises || '', num(req.durationMin), muscles.join(','), req.notes || '']);
-  return { ok: true, rowId: rowId, muscles: muscles, state: workoutState() };
+  const row = [now, todayStr(), req.name || 'Workout', req.exercises || '',
+    duration, finalMuscles.join(','), req.notes || ''];
+  if (Object.keys(load).length) row.push(JSON.stringify(load));
+
+  const rowId = append(SHEETS.WORKOUTS, row);
+  return {
+    ok: true,
+    rowId: rowId,
+    muscles: finalMuscles,
+    exercises: parsed.exercises,
+    load: load,
+    kcal: kcal,
+    state: workoutState()
+  };
+}
+
+/** Body weight from goals, used for load scaling and energy estimates. */
+function bodyWeightKg() {
+  const goals = getGoals();
+  return num(goals.bodyWeightKg) || CONFIG.DEFAULT_BODY_WEIGHT_KG;
 }
 
 function logStudy(req) {
@@ -807,6 +2209,8 @@ function serveFood(f) {
     protein: serving.protein,
     carbs: serving.carbs,
     fat: serving.fat,
+    // Grams for THIS portion, so the client can offer a grams/serving toggle.
+    grams: num(f.grams) ? round1(num(f.grams)) : estimateGrams(qty, unit),
     ref: {
       amount: refAmount,
       unit: refUnit,
@@ -855,22 +2259,30 @@ function cacheFood(req) {
   const rows = sheet.getDataRange().getValues();
   const index = {};
   for (let i = 1; i < rows.length; i++) if (rows[i][0]) index[rows[i][0]] = i + 1;
+  const gramsCol = columnIndex(sheet, SHEETS.FOODS, 'Grams per Unit');
 
   let n = 0;
   items.forEach(function (it) {
     const refUnit = it.refUnit || 'g';
     const key = foodKey(it.name, refUnit);
     const per = [num(it.calories), num(it.protein), num(it.carbs), num(it.fat)];
-    if (index[key]) {
+    // Convert the client's total portion weight into grams per reference unit.
+    const refAmount = num(it.refAmount) || 100;
+    let gramsPerRef = num(it.grams) ? round1(num(it.grams) * refAmount / (num(it.qty) || 1)) : 0;
+    if (!gramsPerRef && num(it.grams)) gramsPerRef = num(it.grams);
+    if (gramsCol > 0 && index[key]) {
       const row = index[key];
       sheet.getRange(row, 5, 1, 6).setValues([[
         per[0], per[1], per[2], per[3],
         num(sheet.getRange(row, 9).getValue()) + 1,
         new Date()
       ]]);
+      if (gramsPerRef) sheet.getRange(row, gramsCol).setValue(gramsPerRef);
     } else {
-      sheet.appendRow([key, it.name, num(it.refAmount) || 100, refUnit,
-        per[0], per[1], per[2], per[3], 1, new Date()]);
+      const row = [key, it.name, refAmount, refUnit,
+        per[0], per[1], per[2], per[3], 1, new Date()];
+      if (gramsCol > 0) row.push(gramsPerRef);
+      sheet.appendRow(row);
       index[key] = sheet.getLastRow();
     }
     n++;

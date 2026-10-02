@@ -26,24 +26,63 @@ const MUSCLE_EMOJI = {
   quads: '🦵', hamstrings: '🦵', calves: '👟'
 };
 
-function muscleTone(m) {
-  if (!m) return 'bm-none';
-  const d = m.daysAgo;
-  // Never trained at all stays neutral; a muscle that WAS trained keeps its
-  // recovery tone even once it falls out of the "trained" window.
-  if (d === null || d === undefined) return 'bm-none';
-  if (d === 0) return 'bm-fresh';
-  if (d <= 2) return 'bm-recent';
-  if (d <= 6) return 'bm-due';
-  if (d <= 13) return 'bm-overdue';
-  return 'bm-cold';
+/**
+ * Determine the CSS class for a muscle based on its effort level.
+ *
+ * Effort level 0 = nothing trained, 1 = light, 2 = solid, 3 = hard, 4 = maxed.
+ * 5+ is displayed as level 4 for visual consistency.
+ */
+function getEffortClass(muscle) {
+  if (!muscle) return 'bm-none';
+  const level = Math.min(5, Math.max(0, muscle.level || 0));
+  return level === 0 ? 'bm-none' : `bm-effort-${level}`;
 }
 
-/* --------------------------------------------------------------------------
-   Muscular anime-style figures. ViewBox 0 0 200 400.
-   Each muscle group is a <g data-muscle="name"> with internal shapes.
-   Fill/stroke = currentColor so CSS .bm-* classes apply the tone.
-   -------------------------------------------------------------------------- */
+/** Get a tooltip text for a muscle with effort information */
+function getEffortTooltip(muscle, name) {
+  if (!muscle) return (MUSCLE_EMOJI[name] || '') + ' ' + (MUSCLE_LABELS[name] || name) + ': never trained';
+
+  const level = Math.min(5, Math.max(0, muscle.level || 0));
+  const when = muscle.lastTrained
+    ? muscle.lastTrained === 'today'
+      ? 'trained today'
+      : muscle.lastTrained + 'd ago'
+    : 'never trained';
+
+  const base = (MUSCLE_EMOJI[name] || '') + ' ' + (MUSCLE_LABELS[name] || name) + ' — ' + when;
+  const effortText = level === 0 ? '' : ` · Effort ${level}/5`;
+  const intensityText = level === 0 ? '' : ` · Intensity ${muscle.intensity}`;
+  const loadText = muscle.load7d ? ` · ${muscle.load7d} load` : '';
+  const sessionsText = muscle.sessions7d ? ` · ${muscle.sessions7d}× this week` : '';
+
+  return base + effortText + intensityText + loadText + sessionsText;
+}
+
+/** Enhanced legend showing both status and effort levels */
+function buildEffortLegend(status) {
+  const levels = [0, 1, 2, 3, 4];
+  const statusLevels = [
+    { level: 0, label: 'Never trained', color: 'bm-none' },
+    { level: 1, label: 'Light session', color: 'bm-effort-1' },
+    { level: 2, label: 'Solid training', color: 'bm-effort-2' },
+    { level: 3, label: 'Hard week', color: 'bm-effort-3' },
+    { level: 4, label: 'Maxed out', color: 'bm-effort-4' }
+  ];
+
+  return `
+    <div class="bm-effort-legend">
+      <div class="bm-legend-title">Effort Level</div>
+      <div class="bm-effort-levels">
+        ${statusLevels.map(item => `
+          <div class="bm-effort-level ${item.color}">
+            <span class="bm-effort-dot"></span>
+            <span class="bm-effort-label">${item.label}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
 
 function figureFront() {
   return `
@@ -237,38 +276,56 @@ function figureBack() {
 /** Paint both figures and colour every muscle region from `status`. */
 function renderBodyMap(root, status) {
   if (!root) return;
-  const st = status || {};
+
+  // Render the SVG figures
+  const front = figureFront();
+  const back = figureBack();
+
   root.innerHTML =
     `<div class="bm-grid">
-       <div class="bm-figure">${figureFront()}</div>
-       <div class="bm-figure">${figureBack()}</div>
-     </div>`;
+      <div class="bm-figure" data-view="front" role="img" aria-label="Front muscular anatomy">
+        ${front}
+      </div>
+      <div class="bm-figure" data-view="back" role="img" aria-label="Back muscular anatomy">
+        ${back}
+      </div>
+    </div>
+    ${buildEffortLegend(status)}`;
 
+  // Apply effort classes to all muscle regions
   root.querySelectorAll('.bm-region').forEach(function (g) {
     const name = g.getAttribute('data-muscle');
-    const tone = muscleTone(st[name]);
+    const muscle = status[name];
+
+    // Set the effort class based on effort level
+    const effortClass = getEffortClass(muscle);
     g.setAttribute('fill', 'currentColor');
     g.setAttribute('stroke', 'currentColor');
-    g.classList.add(tone);
+    g.classList.add(effortClass);
     g.style.color = '';
-    // Propagate to children so tone wins over base fill
+
+    // Propagate to children so effort wins over base fill
     g.querySelectorAll('*').forEach(function (child) {
       child.setAttribute('fill', 'currentColor');
       child.setAttribute('stroke', 'currentColor');
     });
+
     g.setAttribute('tabindex', '0');
     g.setAttribute('role', 'button');
-    const m = st[name] || {};
-    const when = m.daysAgo === null || m.daysAgo === undefined
-      ? 'never trained'
-      : (m.daysAgo === 0 ? 'trained today' : m.daysAgo + 'd ago');
-    g.setAttribute('aria-label', (MUSCLE_LABELS[name] || name) + ': ' + when);
-    g.dataset.days = (m.daysAgo === null || m.daysAgo === undefined) ? '' : m.daysAgo;
-    g.dataset.tip = (MUSCLE_EMOJI[name] || '') + ' ' + (MUSCLE_LABELS[name] || name) + ' — ' + when +
-      (m.sessions7d ? ' · ' + m.sessions7d + '× this week' : '');
+
+    // Generate tooltip with effort information
+    const tooltip = getEffortTooltip(muscle, name);
+    g.setAttribute('aria-label', tooltip);
+    g.dataset.days = muscle?.lastTrained ? '' : '';
+    g.dataset.tip = tooltip;
   });
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { renderBodyMap, muscleTone, MUSCLE_LABELS, MUSCLE_EMOJI };
-}
+module.exports = {
+  renderBodyMap,
+  getEffortClass,
+  buildEffortLegend,
+  getEffortTooltip,
+  MUSCLE_LABELS,
+  MUSCLE_EMOJI
+};

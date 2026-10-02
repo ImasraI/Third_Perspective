@@ -422,39 +422,109 @@ function makeItem(name, qty, unit, per, refAmount, refUnit, flags) {
     unit: unit || refUnit || 'serving',
     refAmount: Number(refAmount) || 1,
     refUnit: refUnit || 'serving',
+    // Macros for ONE reference unit, so changing qty is a multiplication, never
+    // a guess. `gramsPerRef` is the same idea in weight, which is what lets the
+    // g <-> servings toggle work for counted items like eggs and slices.
     per: {
       calories: Number(per.calories) || 0,
       protein: Number(per.protein) || 0,
       carbs: Number(per.carbs) || 0,
       fat: Number(per.fat) || 0
-    }
+    },
+    gramsPerRef: Number(flags && flags.gramsPerRef) || 0
   };
   Object.assign(it, flags || {});
+  delete it.gramsPerRef;
+  it.gramsPerRef = Number((flags && flags.gramsPerRef)) || 0;
+  if (it.gramsPerRef && !flags.gramsPerUnit) it.gramsPerUnit = it.gramsPerRef;
+  // Which unit the user is currently editing in: the entered unit, or grams.
+  it.displayUnit = (flags && flags.displayUnit) || it.unit;
   recompute(it);
   return it;
 }
 
-/** Refresh the serving-level macros from qty x reference macros. */
+/**
+ * Refresh the serving-level macros from qty x reference macros.
+ *
+ * `qty` is ALWAYS in the item's own reference unit and is the single source of
+ * truth. `displayQty`/`displayUnit` are only the numbers shown in the stepper,
+ * so switching between grams and servings never mutates the stored quantity or
+ * risks the two drifting apart.
+ */
 function recompute(it) {
   const k = it.refAmount ? (it.qty / it.refAmount) : 0;
   it.calories = round1(it.per.calories * k);
   it.protein = round1(it.per.protein * k);
   it.carbs = round1(it.per.carbs * k);
   it.fat = round1(it.per.fat * k);
+  it.grams = gramsOf(it);
+  if (it.displayUnit !== 'g') it.displayQty = it.qty;
   return it;
+}
+
+/**
+ * Can this item be shown in grams? Only when we know how heavy one reference
+ * unit is: either the library entry is already weighed (100 g), or the AI/vision
+ * pass told us the weight of a counted portion like an egg or a slice.
+ */
+function canUseGrams(it) {
+  if (!it) return false;
+  if (it.refUnit === 'g' && it.refAmount === 100) return true;
+  return Number(it.gramsPerRef) > 0;
+}
+
+/** Grams for the portion currently staged, or 0 when the weight is unknown. */
+function gramsOf(it) {
+  if (!it || Number(it.gramsPerRef) <= 0) return 0;
+  return round1(it.gramsPerRef * (it.qty / (it.refAmount || 1)));
+}
+
+/**
+ * Set the quantity the user typed, honouring the unit currently displayed.
+ * `qty` stays in reference units, so this is the only place that converts.
+ */
+function setDisplayQty(it, value) {
+  const v = Number(value) || 0;
+  if (it.displayUnit === 'g' && it.gramsPerRef > 0) {
+    // grams -> reference units of the item
+    it.qty = round1(v * (it.refAmount || 1) / it.gramsPerRef);
+    it.displayQty = v;
+  } else {
+    it.qty = v;
+    it.displayQty = v;
+  }
+  return recompute(it);
+}
+
+/** Toggle an item between grams and its natural unit. Purely a display change. */
+function setItemUnit(it, unit) {
+  if (!canUseGrams(it)) return it;
+  it.displayUnit = unit === 'g' ? 'g' : 'it.refUnit';
+  it.displayQty = it.displayUnit === 'g' ? gramsOf(it) : it.qty;
+  return it;
+}
+
+/** The unit label to show next to the quantity stepper. */
+function displayUnitOf(it) {
+  return it.displayUnit === 'g' ? 'g' : it.unit;
 }
 
 /** Scale a library item to a quantity. No AI call. */
 function fromLibrary(f, qty, unit) {
   return makeItem(f.name, qty === undefined || qty === null ? f.refAmount : qty,
-    unit || f.refUnit, f, f.refAmount, f.refUnit, { cached: true });
+    unit || f.refUnit, f, f.refAmount, f.refUnit, { cached: true, gramsPerRef: f.gramsPerRef || 0 });
 }
 
 /** Convert an item from the `parse` API into the staged shape. */
 function fromApi(f) {
   const ref = f.ref || { amount: 1, unit: f.unit, calories: f.calories, protein: f.protein, carbs: f.carbs, fat: f.fat };
+  // The API sends the weight of THIS portion; convert it to weight per ref unit
+  // so grams stay correct when the quantity changes.
+  const gramsPerRef = (f.grams && ref.amount)
+    ? round1((Number(f.grams) || 0) * ref.amount / (Number(f.qty) || 1))
+    : 0;
   return makeItem(f.name, f.qty, f.unit, ref, ref.amount, ref.unit,
-    { estimated: !!f.estimated });
+    { estimated: !!f.estimated, gramsPerRef: gramsPerRef, vision: !!f.vision });
 }
 
 function round1(n) { return Math.round(n * 10) / 10; }

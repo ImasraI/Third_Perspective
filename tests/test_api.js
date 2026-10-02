@@ -45,6 +45,11 @@ function makeSandbox(opts) {
       name: name,
       rows: [],
       getLastRow() { return this.rows.length; },
+      // Sheets reports the last column of the header row, not the data.
+      getLastColumn() {
+        if (!this.rows.length) return 0;
+        return this.rows[0].length;
+      },
       getDataRange() { const s = this; return { getValues: () => s.rows.slice() }; },
       appendRow(row) { this.rows.push(row.slice()); },
       deleteRow(r) { this.rows.splice(r - 1, 1); },
@@ -54,6 +59,12 @@ function makeSandbox(opts) {
         const api = {
           setValue(v) { if (!s.rows[r - 1]) s.rows[r - 1] = []; s.rows[r - 1][c - 1] = v; return api; },
           getValue() { return s.rows[r - 1] ? s.rows[r - 1][c - 1] : ''; },
+          getValues() {
+            return Array.from({ length: nR }, (_, i) => {
+              const row = s.rows[r - 1 + i] || [];
+              return Array.from({ length: nC }, (_, j) => row[c - 1 + j] === undefined ? '' : row[c - 1 + j]);
+            });
+          },
           setValues(rows) { rows.forEach((row, i) => { if (!s.rows[r - 1 + i]) s.rows[r - 1 + i] = []; row.forEach((v, j) => { s.rows[r - 1 + i][c - 1 + j] = v; }); }); return api; },
           setFontWeight() { return api; },
           setBackground() { return api; }
