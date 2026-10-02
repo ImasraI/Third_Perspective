@@ -737,26 +737,19 @@ async function saveWorkout() {
    ========================================================================== */
 
 function switchTab(name) {
-  $$('#tabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  $$('header nav .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $$('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'panel-' + name));
   localStorage.setItem(LS.tab, name);
   if (S.data) drawCharts(S.data);
 }
 
 function bind() {
-  // tabs
-  $('#tabs').addEventListener('click', (e) => {
+  // tabs (header nav)
+  $('header nav').addEventListener('click', (e) => {
     const b = e.target.closest('[data-tab]');
     if (b) switchTab(b.dataset.tab);
   });
   $$('[data-goto]').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.goto)));
-
-  // header
-  $('#refresh-btn').addEventListener('click', () => {
-    const i = $('#refresh-icon');
-    i.classList.add('spin');
-    load().finally(() => i.classList.remove('spin'));
-  });
 
   // settings
   $('#settings-btn').addEventListener('click', () => {
