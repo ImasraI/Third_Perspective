@@ -221,6 +221,24 @@ function renderLibrary(d) {
 function renderBody(d) {
   renderBodyMap($('#bodymap'), d.workouts.muscleStatus);
   buildLegend(d.workouts.muscleStatus);
+  applyBodyWindow();
+}
+
+/* The window select only re-filters what is highlighted client-side; muscle
+   status itself is computed server-side from every workout on record. */
+function applyBodyWindow() {
+  const sel = $('#body-window');
+  if (!sel) return;
+  const max = parseInt(sel.value, 10) || 6;
+  const svg = $('#bodymap');
+  if (!svg) return;
+  svg.querySelectorAll('.bm-region').forEach(function (g) {
+    const days = parseInt(g.dataset.days, 10);
+    const inWindow = Number.isFinite(days) && days <= max;
+    g.classList.toggle('bm-out', !inWindow);
+  });
+  const note = $('#bm-window-note');
+  if (note) note.textContent = 'Highlighted: trained in the last ' + (max + 1) + ' days';
 }
 
 function buildLegend(status) {
@@ -446,6 +464,15 @@ function totalOf(items) {
   }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
 }
 
+/** Update the parsed-item total row without a full re-render. */
+function setParsedTotals(t) {
+  const map = { 'p-cal': t.calories, 'p-pro': t.protein, 'p-carb': t.carbs, 'p-fat': t.fat };
+  for (const id in map) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = fmt(map[id]);
+  }
+}
+
 function renderParsed() {
   const box = $('#parsed-box');
   if (!S.parsed.length) { box.classList.add('hidden'); $('#food-add').disabled = true; return; }
@@ -463,27 +490,27 @@ function renderParsed() {
         <div class="grid grid-cols-5 gap-1.5 mt-2">
           <div class="stepper" data-qty="${i}">
             <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
-            <input class="stepper-input" type="number" step="0.1" value="${it.qty}" readonly aria-label="Quantity">
+            <input class="stepper-input" type="number" step="0.1" value="${it.qty}" data-qty="${i}" aria-label="Quantity">
             <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
           </div>
           <div class="stepper" data-mac="calories" data-i="${i}">
             <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
-            <input class="stepper-input" type="number" value="${it.calories}" readonly aria-label="Calories">
+            <input class="stepper-input" type="number" value="${it.calories}" data-mac="calories" data-i="${i}" aria-label="Calories">
             <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
           </div>
           <div class="stepper" data-mac="protein" data-i="${i}">
             <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
-            <input class="stepper-input" type="number" value="${it.protein}" readonly aria-label="Protein">
+            <input class="stepper-input" type="number" value="${it.protein}" data-mac="protein" data-i="${i}" aria-label="Protein">
             <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
           </div>
           <div class="stepper" data-mac="carbs" data-i="${i}">
             <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
-            <input class="stepper-input" type="number" value="${it.carbs}" readonly aria-label="Carbs">
+            <input class="stepper-input" type="number" value="${it.carbs}" data-mac="carbs" data-i="${i}" aria-label="Carbs">
             <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
           </div>
           <div class="stepper" data-mac="fat" data-i="${i}">
             <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
-            <input class="stepper-input" type="number" value="${it.fat}" readonly aria-label="Fat">
+            <input class="stepper-input" type="number" value="${it.fat}" data-mac="fat" data-i="${i}" aria-label="Fat">
             <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
           </div>
         </div>
@@ -505,8 +532,8 @@ function renderParsed() {
 
   // Attach stepper click handlers
   box.querySelectorAll('.stepper').forEach(st => {
-    const idx = +st.dataset.i || +st.dataset.qty;
     const isQty = st.dataset.qty !== undefined;
+    const idx = isQty ? +st.dataset.qty : +st.dataset.i;
     const mac = st.dataset.mac;
     st.querySelectorAll('.stepper-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -737,19 +764,26 @@ async function saveWorkout() {
    ========================================================================== */
 
 function switchTab(name) {
-  $$('header nav .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  $$('#tabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $$('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'panel-' + name));
   localStorage.setItem(LS.tab, name);
   if (S.data) drawCharts(S.data);
 }
 
 function bind() {
-  // tabs (header nav)
-  $('header nav').addEventListener('click', (e) => {
+  // tabs
+  $('#tabs').addEventListener('click', (e) => {
     const b = e.target.closest('[data-tab]');
     if (b) switchTab(b.dataset.tab);
   });
   $$('[data-goto]').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.goto)));
+
+  // header
+  $('#refresh-btn').addEventListener('click', () => {
+    const i = $('#refresh-icon');
+    i.classList.add('spin');
+    load().finally(() => i.classList.remove('spin'));
+  });
 
   // settings
   $('#settings-btn').addEventListener('click', () => {
@@ -801,10 +835,7 @@ function bind() {
         const k = it.refAmount ? (it.qty / it.refAmount) : 0;
         if (k) it.per[t.dataset.mac] = round1(v / k);
         const s = totalOf(S.parsed);
-        $('#p-cal').textContent = fmt(s.calories);
-        $('#p-pro').textContent = fmt(s.protein);
-        $('#p-carb').textContent = fmt(s.carbs);
-        $('#p-fat').textContent = fmt(s.fat);
+        setParsedTotals(s);
       }
     }
     if (t.dataset.qty !== undefined) {
@@ -820,6 +851,9 @@ function bind() {
     const rm = e.target.closest('[data-rm]');
     if (rm) { S.parsed.splice(+rm.dataset.rm, 1); renderParsed(); }
   });
+
+  // body map
+  $('#body-window').addEventListener('change', applyBodyWindow);
 
   // body map tooltips
   const tip = $('#bm-tip');

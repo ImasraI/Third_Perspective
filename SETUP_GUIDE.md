@@ -1,4 +1,4 @@
-# Goal Tracker — Setup Guide (Web PWA + Apps Script)
+# ThirdPerspective — Setup Guide (Web PWA + Apps Script)
 
 ## Architecture
 - **Frontend**: Static PWA (HTML/JS/CSS) hosted on **Netlify** (or Vercel, GitHub Pages).
@@ -13,14 +13,16 @@ No Telegram, no bot, no server you manage.
 
 1. Create a new Google Sheet (or use an existing one).
 2. Extensions → **Apps Script**.
-3. Replace `Code.gs` with the contents of `Code.js` from this repo.
-4. File → Project properties → **Script properties**, add:
+3. Delete the contents of `Code.gs` in the Apps Script editor and paste the full contents of `Code.js` from this repo. (The file is named `.js` in the repo but is pasted into the single `Code.gs` script file.)
+4. Project Settings → **Script properties**, add:
    - `GEMINI_API_KEY` — your Gemini API key (get one at https://aistudio.google.com/apikey).
    - `APP_KEY` *(optional)* — a shared secret; if set, the PWA must send the same value in `appKey` header/body to call any endpoint except `ping` and `gemini.test`.
-5. Deploy → **New deployment** → Type: **Web app** → Execute as: **Me** → Who has access: **Anyone** (or "Anyone with link" if you prefer).
+   - `tracker_goals` *(optional)* — goals are stored here as JSON; the app reads and writes it automatically.
+5. Deploy → **New deployment** → Type: **Web app** → Execute as: **Me** → Who has access: **Anyone**. This must be **Anyone** for browser requests to work — "Anyone with Google account" or "Anyone with link" will fail CORS.
 6. Copy the **Web app URL** (ends with `/exec`). This is your **API endpoint**.
+7. Paste that `/exec` URL into the PWA: gear icon (⚙️) → **API Endpoint** → **Save & sync**.
 
-> The script auto-creates 7 sheets on first `state` call: `Nutrition`, `Workouts`, `Expenses`, `Study`, `Tasks`, `Classes`, `Foods`, plus a hidden `Goals` sheet via Script Properties.
+> The script auto-creates 7 sheets on first `state` call: `Nutrition`, `Workouts`, `Expenses`, `Study`, `Tasks`, `Classes`, `Foods`. Goals are stored in the `tracker_goals` Script Property, not in a sheet.
 
 ---
 
@@ -105,7 +107,8 @@ Values are saved to **Script Properties** → persist across redeploys.
 
 | Symptom | Fix |
 |---------|-----|
-| "Failed to fetch" / CORS error | Make sure the Apps Script deployment is **Anyone** (not "Anyone with link"). The PWA uses `text/plain` POST to avoid preflight. |
+| "Failed to fetch" / CORS error | Make sure the Apps Script deployment access is **Anyone**. The PWA uses `text/plain` POST to avoid preflight. Also confirm the URL ends with `/exec`, not `/dev`. |
+| Buttons do nothing, console shows `Cannot read properties of null (reading 'addEventListener')` | Stale cached `app.js`/`index.html`. Hard-reload with `Ctrl+Shift+R` (or clear site data). |
 | `gemini.test` returns `ok: false` | Script Property `GEMINI_API_KEY` missing or invalid. |
 | Food macros look wrong | The AI may have guessed. Edit the numbers inline before hitting **Add** — the corrected values are cached for next time. |
 | Body map doesn't colour | Workouts must include at least one valid muscle from the 12-group list. |

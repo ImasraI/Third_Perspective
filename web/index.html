@@ -1,106 +1,569 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#0f172a">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>ThirdPerspective</title>
+
+  <meta name="theme-color" content="#090D16">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ThirdPerspective">
-  <title>ThirdPerspective</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='100' y2='100'%3E%3Cstop offset='0' stop-color='%2322d3ee'/%3E%3Cstop offset='1' stop-color='%23a855f7'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M10 50 Q10 10 50 10 Q90 10 90 50 Q90 90 50 90 Q10 90 10 50' fill='none' stroke='url(%23g)' stroke-width='8' stroke-linecap='round'/%3E%3Cpath d='M30 50 Q30 30 50 30 Q70 30 70 50 Q70 70 50 70 Q30 70 30 50' fill='none' stroke='%2322d3ee' stroke-width='4' stroke-dasharray='8,12'/%3E%3Ccircle cx='50' cy='50' r='12' fill='%23a855f7'/%3E%3C/svg%3E">
-  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='180' y2='180'%3E%3Cstop offset='0' stop-color='%2322d3ee'/%3E%3Cstop offset='1' stop-color='%23a855f7'/%3E%3C/defs%3E%3Cpath d='M18 90 Q18 18 90 18 Q162 18 162 90 Q162 162 90 162 Q18 162 18 90' fill='none' stroke='url(%23g)' stroke-width='14' stroke-linecap='round'/%3E%3Cpath d='M54 90 Q54 54 90 54 Q126 54 126 90 Q126 126 90 126 Q54 126 54 90' fill='none' stroke='%2322d3ee' stroke-width='7' stroke-dasharray='14,22'/%3E%3Ccircle cx='90' cy='90' r='22' fill='%23a855f7'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300E5FF'><circle cx='12' cy='12' r='10'/></svg>">
+
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>tailwind.config = { darkMode: 'class' }</script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              orange: '#FF5722',
+              cyan: '#00E5FF',
+              purple: '#8B5CF6',
+              green: '#10B981',
+              dark: '#090D16'
+            }
+          },
+          fontFamily: { sans: ['Outfit', 'Inter', 'system-ui', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
+
   <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen">
-  <div class="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950" aria-hidden="true"></div>
+<body class="bg-brand-dark text-slate-100 min-h-screen font-sans antialiased">
 
-  <header class="relative z-10 sticky top-0 backdrop-blur-xl bg-slate-950/80 border-b border-slate-800/50">
-    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-      <div class="flex items-center gap-2 min-w-0">
-        <svg class="w-8 h-8 text-cyan-400 flex-shrink-0" viewBox="0 0 100 100" fill="none" aria-hidden="true">
-          <defs><linearGradient id="logoGrad" x1="0" y1="0" x2="100" y2="100"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>
-          <path d="M10 50 Q10 10 50 10 Q90 10 90 50 Q90 90 50 90 Q10 90 10 50" stroke="url(#logoGrad)" stroke-width="8" stroke-linecap="round"/>
-          <path d="M30 50 Q30 30 50 30 Q70 30 70 50 Q70 70 50 70 Q30 70 30 50" stroke="#22d3ee" stroke-width="4" stroke-dasharray="8,12"/>
-          <circle cx="50" cy="50" r="12" fill="#a855f7"/>
-        </svg>
-        <div class="min-w-0">
-          <span class="font-bold text-lg tracking-tight bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent truncate block">ThirdPerspective</span>
-          <div class="flex items-center gap-2 text-[11px]">
-            <span id="live-dot" class="inline-block w-2.5 h-2.5 rounded-full bg-slate-600"></span>
-            <span id="live-indicator" class="uppercase tracking-wider font-semibold text-slate-400">Not connected</span>
-          </div>
-          <p id="current-date" class="text-[10px] text-slate-500 font-medium hidden sm:block">—</p>
+  <div class="fixed top-0 left-1/4 w-96 h-96 bg-brand-orange/10 rounded-full blur-3xl pointer-events-none -z-10"></div>
+  <div class="fixed bottom-1/4 right-1/4 w-96 h-96 bg-brand-cyan/10 rounded-full blur-3xl pointer-events-none -z-10"></div>
+
+  <div class="max-w-5xl mx-auto px-4 py-6 md:py-10 space-y-6 pb-32">
+
+    <!-- ===================== HEADER ===================== -->
+    <header class="flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <span id="live-dot" class="inline-block w-2.5 h-2.5 rounded-full bg-slate-600"></span>
+          <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-400" id="live-indicator">Not connected</span>
         </div>
+        <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight text-white bg-gradient-to-r from-brand-cyan to-brand-purple bg-clip-text text-transparent">ThirdPerspective</h1>
+        <p class="text-xs text-slate-400 font-medium" id="current-date">—</p>
       </div>
-
-      <nav class="flex items-center gap-1 bg-slate-900/50 rounded-xl p-1 border border-slate-800/50" role="tablist">
-        <button data-tab="today" class="tab-btn px-3 py-1.5 rounded-lg text-sm font-medium" role="tab">Today</button>
-        <button data-tab="food" class="tab-btn px-3 py-1.5 rounded-lg text-sm font-medium" role="tab">Food</button>
-        <button data-tab="body" class="tab-btn px-3 py-1.5 rounded-lg text-sm font-medium" role="tab">Body</button>
-        <button data-tab="money" class="tab-btn px-3 py-1.5 rounded-lg text-sm font-medium" role="tab">Money</button>
-        <button data-tab="study" class="tab-btn px-3 py-1.5 rounded-lg text-sm font-medium" role="tab">Study</button>
-        <button data-tab="tasks" class="tab-btn px-3 py-1.5 rounded-lg text-sm font-medium" role="tab">Tasks</button>
-        <button data-tab="more" class="tab-btn px-3 py-1.5 rounded-lg text-sm font-medium" role="tab">More</button>
-      </nav>
-
       <div class="flex items-center gap-2">
-        <button id="refresh-btn" class="p-2 rounded-xl hover:bg-slate-800 transition" aria-label="Refresh" title="Refresh">
+        <button id="refresh-btn" class="p-2.5 rounded-2xl bg-slate-800/80 border border-white/5 text-slate-300 active:scale-95" title="Refresh">
           <i data-lucide="refresh-cw" class="w-5 h-5" id="refresh-icon"></i>
         </button>
-        <button id="settings-btn" class="p-2 rounded-xl hover:bg-slate-800 transition" aria-label="Settings" title="Settings">
-          <i data-lucide="settings" class="w-5 h-5"></i>
+        <button id="settings-btn" class="p-2.5 rounded-2xl bg-slate-800/80 border border-white/5 text-slate-300 active:scale-95" title="Settings">
+          <i data-lucide="sliders" class="w-5 h-5"></i>
         </button>
       </div>
-    </div>
-  </header>
+    </header>
 
-  <main id="app" class="relative z-10 max-w-5xl mx-auto px-4 pb-24"></main>
+    <!-- ===================== TABS ===================== -->
+    <nav class="glass-card rounded-2xl p-1.5 flex gap-1 overflow-x-auto" id="tabs">
+      <button class="tab-btn active" data-tab="today">Today</button>
+      <button class="tab-btn" data-tab="food">Food</button>
+      <button class="tab-btn" data-tab="body">Body</button>
+      <button class="tab-btn" data-tab="money">Money</button>
+      <button class="tab-btn" data-tab="study">Study</button>
+      <button class="tab-btn" data-tab="tasks">Tasks</button>
+      <button class="tab-btn" data-tab="more">More</button>
+    </nav>
 
-  <div id="toast" class="fixed bottom-4 right-4 z-50 hidden" role="alert"></div>
+    <!-- ===================== TODAY ===================== -->
+    <section class="tab-panel space-y-6" id="panel-today">
 
-  <!-- Settings Modal -->
-  <div id="settings-modal" class="modal hidden">
-    <div class="glass-card rounded-3xl p-6 w-full max-w-md animate-slide-up">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-lg font-bold text-white">Settings</h3>
-        <button id="close-settings" class="icon-btn" aria-label="Close"><i data-lucide="x" class="w-5 h-5"></i></button>
-      </div>
-      <div class="space-y-4">
-        <div>
-          <label class="label">API Endpoint</label>
-          <input id="api-url-input" type="url" class="field" placeholder="https://script.google.com/macros/s/.../exec" />
-          <p class="text-[11px] text-slate-500 mt-1">Your Apps Script Web App URL (ends with <code>/exec</code>)</p>
-        </div>
-        <div>
-          <label class="label">App Key (optional)</label>
-          <input id="api-key-input" type="password" class="field" placeholder="Leave blank if not using" />
-          <p class="text-[11px] text-slate-500 mt-1">Must match the <code>APP_KEY</code> in Script Properties</p>
-        </div>
-        <div class="pt-2">
-          <button id="save-settings-btn" class="btn btn-primary w-full">
-            <i data-lucide="save" class="w-4 h-4"></i> Save & Connect
-          </button>
-        </div>
-        <div class="pt-4 border-t border-white/5">
-          <p class="text-[11px] text-slate-500 text-center" id="conn-info">Not connected</p>
-          <div class="flex gap-2 mt-4">
-            <button id="test-btn" class="btn btn-ghost flex-1">Test Backend</button>
-            <button id="gemin-test" class="btn btn-ghost flex-1">Test Gemini</button>
+      <div class="glass-card rounded-3xl p-6 md:p-8">
+        <div class="flex flex-col md:flex-row items-center justify-between gap-8">
+          <div class="relative flex items-center justify-center shrink-0">
+            <svg class="w-52 h-52 md:w-60 md:h-60 -rotate-90" viewBox="0 0 200 200">
+              <circle cx="100" cy="100" r="82" class="stroke-slate-800" stroke-width="12" fill="none"/>
+              <circle id="ring-calorie" cx="100" cy="100" r="82" class="ring-circle stroke-brand-orange" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="515" stroke-dashoffset="515"/>
+              <circle cx="100" cy="100" r="64" class="stroke-slate-800" stroke-width="12" fill="none"/>
+              <circle id="ring-protein" cx="100" cy="100" r="64" class="ring-circle stroke-brand-cyan" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="402" stroke-dashoffset="402"/>
+              <circle cx="100" cy="100" r="46" class="stroke-slate-800" stroke-width="12" fill="none"/>
+              <circle id="ring-budget" cx="100" cy="100" r="46" class="ring-circle stroke-brand-purple" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="289"/>
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span class="text-3xl font-extrabold text-white font-mono" id="center-cal">0</span>
+              <span class="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">kcal left</span>
+            </div>
           </div>
-          <button id="install-btn2" class="btn btn-ghost w-full mt-2 hidden">
-            <i data-lucide="download" class="w-4 h-4"></i> Install App
+
+          <div class="flex-1 w-full space-y-4">
+            <div class="flex items-center justify-between border-b border-white/5 pb-3">
+              <h2 class="text-base font-bold text-white flex items-center gap-2">
+                <i data-lucide="flame" class="w-4 h-4 text-brand-orange"></i> Daily Targets
+              </h2>
+              <span class="text-xs font-mono text-slate-400" id="macro-split">P 0 · C 0 · F 0</span>
+            </div>
+
+            <div class="space-y-1.5">
+              <div class="flex justify-between text-sm">
+                <span class="text-slate-300 flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-brand-orange"></span> Calories</span>
+                <span class="font-mono text-white"><span id="stat-cal">0</span> / <span id="goal-cal">2000</span> kcal</span>
+              </div>
+              <div class="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
+                <div id="bar-cal" class="bg-gradient-to-r from-orange-600 to-brand-orange h-full rounded-full transition-all duration-700" style="width:0%"></div>
+              </div>
+            </div>
+
+            <div class="space-y-1.5">
+              <div class="flex justify-between text-sm">
+                <span class="text-slate-300 flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-brand-cyan"></span> Protein</span>
+                <span class="font-mono text-white"><span id="stat-pro">0</span> / <span id="goal-pro">140</span> g</span>
+              </div>
+              <div class="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
+                <div id="bar-pro" class="bg-gradient-to-r from-teal-500 to-brand-cyan h-full rounded-full transition-all duration-700" style="width:0%"></div>
+              </div>
+            </div>
+
+            <div class="space-y-1.5">
+              <div class="flex justify-between text-sm">
+                <span class="text-slate-300 flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-brand-purple"></span> Month spend</span>
+                <span class="font-mono text-white"><span id="stat-spend">0</span> / <span id="goal-spend">0</span></span>
+              </div>
+              <div class="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
+                <div id="bar-spend" class="bg-gradient-to-r from-indigo-500 to-brand-purple h-full rounded-full transition-all duration-700" style="width:0%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="glass-card rounded-2xl p-4 space-y-1">
+          <div class="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Spent today</div>
+          <p class="text-2xl font-extrabold text-white font-mono" id="m-spent">0</p>
+        </div>
+        <div class="glass-card rounded-2xl p-4 space-y-1">
+          <div class="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Study</div>
+          <p class="text-2xl font-extrabold text-white font-mono" id="m-study">0m</p>
+        </div>
+        <div class="glass-card rounded-2xl p-4 space-y-1">
+          <div class="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Workouts</div>
+          <p class="text-2xl font-extrabold text-white font-mono" id="m-workout">0</p>
+        </div>
+        <div class="glass-card rounded-2xl p-4 space-y-1">
+          <div class="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Open tasks</div>
+          <p class="text-2xl font-extrabold text-white font-mono" id="m-tasks">0</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="glass-card rounded-3xl p-6 space-y-4">
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            <i data-lucide="utensils" class="w-4 h-4 text-brand-orange"></i> Today's food
+          </h3>
+          <div class="space-y-2 max-h-72 overflow-y-auto pr-1" id="today-foods">
+            <div class="text-center py-6 text-sm text-slate-500">Nothing logged yet</div>
+          </div>
+          <button class="btn btn-food w-full" data-goto="food">
+            <i data-lucide="plus" class="w-4 h-4"></i> Log food
+          </button>
+        </div>
+
+        <div class="glass-card rounded-3xl p-6 space-y-4">
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            <i data-lucide="list-todo" class="w-4 h-4 text-brand-cyan"></i> Tasks
+          </h3>
+          <div class="space-y-2 max-h-72 overflow-y-auto pr-1" id="today-tasks">
+            <div class="text-center py-6 text-sm text-slate-500">No tasks</div>
+          </div>
+          <button class="btn btn-ghost w-full" data-goto="tasks">
+            <i data-lucide="plus" class="w-4 h-4"></i> Add task
           </button>
         </div>
       </div>
+    </section>
+
+    <!-- ===================== FOOD ===================== -->
+    <section class="tab-panel space-y-6 hidden" id="panel-food">
+
+      <div class="glass-card rounded-3xl p-6 space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-4 h-4 text-brand-purple"></i> Log a meal
+          </h2>
+          <span class="text-[11px] text-slate-400 font-mono">AI · free Gemini key</span>
+        </div>
+
+        <p class="text-xs text-slate-400 leading-relaxed">
+          Type a meal and let AI work out the macros — or start typing and pick a
+          <span class="text-emerald-400 font-semibold">saved item</span> to skip the AI entirely.
+        </p>
+
+        <div class="ac-wrap">
+          <input id="food-input" class="field" autocomplete="off" placeholder="e.g. 2 eggs and a bowl of rice with chicken" />
+          <div id="food-ac" class="ac-list hidden"></div>
+        </div>
+
+        <div id="ai-status" class="hidden ai-pulse rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 flex items-center gap-2">
+          <i data-lucide="loader" class="w-3.5 h-3.5 spin"></i> Asking Gemini for nutrition facts…
+        </div>
+
+        <div id="parsed-box" class="hidden space-y-2"></div>
+
+        <div class="flex gap-2">
+          <button id="food-parse" class="btn btn-primary flex-1">
+            <i data-lucide="sparkles" class="w-4 h-4"></i> Calculate
+          </button>
+          <button id="food-add" class="btn btn-food flex-1" disabled>
+            <i data-lucide="check" class="w-4 h-4"></i> Log it
+          </button>
+        </div>
+        <p class="text-[11px] text-slate-500">
+          New AI estimates are saved to your library automatically, so the same food is instant next time.
+        </p>
+      </div>
+
+      <div class="glass-card rounded-3xl p-6 space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            <i data-lucide="library" class="w-4 h-4 text-emerald-400"></i> Food library
+            <span id="lib-count" class="text-xs font-mono text-slate-500">0</span>
+          </h3>
+          <input id="lib-search" class="field !w-40 !py-1.5 !text-xs" placeholder="Search…" />
+        </div>
+        <div id="lib-list" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-96 overflow-y-auto pr-1">
+          <div class="text-center py-6 text-sm text-slate-500 col-span-full">No saved foods yet — log a meal first</div>
+        </div>
+      </div>
+
+      <div class="glass-card rounded-3xl p-6 space-y-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="history" class="w-4 h-4 text-slate-400"></i> Recent entries
+        </h3>
+        <div id="food-log" class="space-y-2 max-h-80 overflow-y-auto pr-1">
+          <div class="text-center py-6 text-sm text-slate-500">Nothing logged yet</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== BODY ===================== -->
+    <section class="tab-panel space-y-6 hidden" id="panel-body">
+
+      <div class="glass-card rounded-3xl p-6 space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <i data-lucide="person-standing" class="w-4 h-4 text-brand-green"></i> Muscle recovery map
+          </h2>
+          <select id="body-window" class="field !w-auto !py-1.5 !text-xs">
+            <option value="6">Last 7 days</option>
+            <option value="13">Last 14 days</option>
+            <option value="20">Last 21 days</option>
+          </select>
+        </div>
+        <p class="text-xs text-slate-400">Front and back view. Hover or tap a muscle for detail.</p>
+        <p id="bm-window-note" class="text-[11px] text-slate-500 text-center"></p>
+
+        <div id="bodymap" class="max-w-md mx-auto w-full"></div>
+        <div id="bm-tip" class="bm-tip"></div>
+
+        <div id="bm-legend" class="bm-legend justify-center"></div>
+        <div class="flex flex-wrap justify-center gap-3 text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--bm-fresh)"></span>0-2d</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--bm-due)"></span>3-6d</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--bm-overdue)"></span>7-13d</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--bm-none)"></span>never</span>
+        </div>
+      </div>
+
+      <div class="glass-card rounded-3xl p-6 space-y-4">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="dumbbell" class="w-4 h-4 text-brand-cyan"></i> Log a workout
+        </h3>
+        <div class="ac-wrap">
+          <input id="wk-input" class="field" placeholder="e.g. bench press 80kg 4x10 and cable fly" />
+          <div id="wk-ac" class="ac-list hidden"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="label">Duration (min)</label>
+            <input id="wk-dur" type="number" inputmode="numeric" class="field" placeholder="60" />
+          </div>
+          <div>
+            <label class="label">Name</label>
+            <input id="wk-name" class="field" placeholder="Push day" />
+          </div>
+        </div>
+        <div>
+          <label class="label">Muscle groups trained</label>
+          <div id="wk-muscles" class="flex flex-wrap gap-2"></div>
+        </div>
+        <button id="wk-save" class="btn btn-workout w-full">
+          <i data-lucide="check" class="w-4 h-4"></i> Save workout
+        </button>
+      </div>
+
+      <div class="glass-card rounded-3xl p-6 space-y-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="history" class="w-4 h-4 text-slate-400"></i> Workout history
+        </h3>
+        <div id="wk-log" class="space-y-2 max-h-80 overflow-y-auto pr-1">
+          <div class="text-center py-6 text-sm text-slate-500">No workouts yet</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== MONEY ===================== -->
+    <section class="tab-panel space-y-6 hidden" id="panel-money">
+      <div class="glass-card rounded-3xl p-6 space-y-4">
+        <h2 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="wallet" class="w-4 h-4 text-brand-purple"></i> Add an expense
+        </h2>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="label">Amount</label>
+            <input id="ex-amount" type="number" inputmode="decimal" class="field" placeholder="250000" />
+          </div>
+          <div>
+            <label class="label">Category</label>
+            <select id="ex-cat" class="field">
+              <option>Food &amp; Dining</option><option>Groceries</option><option>Transportation</option>
+              <option>Shopping</option><option>Health &amp; Fitness</option><option>Education</option>
+              <option>Subscriptions</option><option>Utilities &amp; Bills</option><option>Miscellaneous</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="label">Merchant / note</label>
+          <input id="ex-merchant" class="field" placeholder="Digikala, coffee, …" />
+        </div>
+        <div class="flex items-center justify-between rounded-xl bg-white/5 px-3 py-2 text-xs">
+          <span class="text-slate-400">Month total</span>
+          <span class="font-mono text-white" id="ex-month">0</span>
+        </div>
+        <button id="ex-save" class="btn btn-money w-full">
+          <i data-lucide="check" class="w-4 h-4"></i> Save expense
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="glass-card rounded-3xl p-6 space-y-4">
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            <i data-lucide="pie-chart" class="w-4 h-4 text-brand-purple"></i> By category
+          </h3>
+          <div class="relative h-56 flex items-center justify-center">
+            <canvas id="expenseChart"></canvas>
+          </div>
+        </div>
+        <div class="glass-card rounded-3xl p-6 space-y-4">
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            <i data-lucide="receipt" class="w-4 h-4 text-emerald-400"></i> Recent
+          </h3>
+          <div id="ex-list" class="space-y-2 max-h-72 overflow-y-auto pr-1">
+            <div class="text-center py-6 text-sm text-slate-500">No expenses yet</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== STUDY ===================== -->
+    <section class="tab-panel space-y-6 hidden" id="panel-study">
+      <div class="glass-card rounded-3xl p-6 space-y-4">
+        <h2 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="book-open" class="w-4 h-4 text-blue-400"></i> Log a study session
+        </h2>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="label">Subject</label>
+            <input id="st-subject" class="field" placeholder="Linear Algebra" />
+          </div>
+          <div>
+            <label class="label">Minutes</label>
+            <input id="st-min" type="number" inputmode="numeric" class="field" placeholder="45" />
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-study flex-1" data-quick="30">30m</button>
+          <button class="btn btn-study flex-1" data-quick="45">45m</button>
+          <button class="btn btn-study flex-1" data-quick="60">1h</button>
+          <button class="btn btn-study flex-1" data-quick="120">2h</button>
+        </div>
+        <button id="st-save" class="btn btn-study w-full">
+          <i data-lucide="check" class="w-4 h-4"></i> Save session
+        </button>
+      </div>
+
+      <div class="glass-card rounded-3xl p-6 space-y-4">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="bar-chart-3" class="w-4 h-4 text-blue-400"></i> Last 7 days (minutes)
+        </h3>
+        <div class="relative h-48"><canvas id="studyChart"></canvas></div>
+      </div>
+
+      <div class="glass-card rounded-3xl p-6 space-y-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="history" class="w-4 h-4 text-slate-400"></i> Sessions
+        </h3>
+        <div id="st-list" class="space-y-2 max-h-72 overflow-y-auto pr-1">
+          <div class="text-center py-6 text-sm text-slate-500">Nothing logged yet</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== TASKS ===================== -->
+    <section class="tab-panel space-y-6 hidden" id="panel-tasks">
+      <div class="glass-card rounded-3xl p-6 space-y-4">
+        <h2 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="list-checks" class="w-4 h-4 text-brand-orange"></i> Tasks &amp; reminders
+        </h2>
+        <div class="ac-wrap">
+          <input id="task-input" class="field" placeholder="Submit lab report by Friday 5pm" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="label">Due</label>
+            <input id="task-due" class="field" placeholder="Friday 5pm" />
+          </div>
+          <div>
+            <label class="label">Priority</label>
+            <select id="task-prio" class="field">
+              <option>Normal</option><option>High</option><option>Low</option>
+            </select>
+          </div>
+        </div>
+        <button id="task-save" class="btn btn-food w-full">
+          <i data-lucide="plus" class="w-4 h-4"></i> Add task
+        </button>
+      </div>
+
+      <div class="glass-card rounded-3xl p-6 space-y-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="inbox" class="w-4 h-4 text-brand-cyan"></i> Open
+          <span id="task-open" class="text-xs font-mono text-slate-500">0</span>
+        </h3>
+        <div id="task-open-list" class="space-y-2">
+          <div class="text-center py-6 text-sm text-slate-500">All clear 🎉</div>
+        </div>
+      </div>
+
+      <div class="glass-card rounded-3xl p-6 space-y-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="check-check" class="w-4 h-4 text-emerald-400"></i> Done
+        </h3>
+        <div id="task-done-list" class="space-y-2 max-h-72 overflow-y-auto pr-1">
+          <div class="text-center py-6 text-sm text-slate-500">Nothing done yet</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== MORE ===================== -->
+    <section class="tab-panel space-y-6 hidden" id="panel-more">
+      <div class="glass-card rounded-3xl p-6 space-y-4">
+        <h2 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="calendar" class="w-4 h-4 text-brand-cyan"></i> Weekly classes
+        </h2>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="label">Day</label>
+            <select id="cl-day" class="field">
+              <option>Saturday</option><option>Sunday</option><option>Monday</option>
+              <option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Time</label>
+            <input id="cl-time" class="field" placeholder="09:00" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="label">Subject</label>
+            <input id="cl-subject" class="field" placeholder="Physics" />
+          </div>
+          <div>
+            <label class="label">Room / link</label>
+            <input id="cl-room" class="field" placeholder="Hall 3" />
+          </div>
+        </div>
+        <button id="cl-save" class="btn btn-primary w-full">
+          <i data-lucide="plus" class="w-4 h-4"></i> Add class
+        </button>
+        <div id="cl-list" class="space-y-2">
+          <div class="text-center py-6 text-sm text-slate-500">No classes yet</div>
+        </div>
+      </div>
+
+      <div class="glass-card rounded-3xl p-6 space-y-4">
+        <h2 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="target" class="w-4 h-4 text-brand-orange"></i> Goals
+        </h2>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="label">Calories</label><input id="g-cal" type="number" class="field" /></div>
+          <div><label class="label">Protein (g)</label><input id="g-pro" type="number" class="field" /></div>
+          <div><label class="label">Carbs (g)</label><input id="g-carb" type="number" class="field" /></div>
+          <div><label class="label">Fat (g)</label><input id="g-fat" type="number" class="field" /></div>
+          <div><label class="label">Study (min)</label><input id="g-study" type="number" class="field" /></div>
+          <div><label class="label">Month budget</label><input id="g-budget" type="number" class="field" /></div>
+        </div>
+        <div>
+          <label class="label">Currency label</label>
+          <input id="g-currency" class="field" placeholder="toman" />
+        </div>
+        <button id="g-save" class="btn btn-primary w-full">
+          <i data-lucide="check" class="w-4 h-4"></i> Save goals
+        </button>
+      </div>
+
+      <div class="glass-card rounded-3xl p-6 space-y-3">
+        <h2 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="database" class="w-4 h-4 text-emerald-400"></i> Backend
+        </h2>
+        <p class="text-xs text-slate-400" id="conn-info">Not connected</p>
+        <div class="flex gap-2">
+          <button id="test-btn" class="btn btn-ghost flex-1">Test connection</button>
+          <button id="gemin-test" class="btn btn-ghost flex-1">Test Gemini</button>
+        </div>
+        <button id="install-btn2" class="btn btn-ghost w-full hidden">
+          <i data-lucide="smartphone" class="w-4 h-4"></i> Install app
+        </button>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ===================== SETTINGS MODAL ===================== -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="glass-card rounded-3xl p-6 max-w-md w-full space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="settings" class="w-5 h-5 text-brand-cyan"></i> Connection
+        </h3>
+        <button id="close-settings" class="p-1 rounded-lg text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <p class="text-xs text-slate-300 leading-relaxed">
+        Paste the Google Apps Script <span class="text-brand-cyan font-semibold">/exec</span> URL that serves your data.
+      </p>
+      <div>
+        <label class="label">Web App URL</label>
+        <input id="api-url-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" class="field font-mono !text-xs" />
+      </div>
+      <div>
+        <label class="label">App key (optional)</label>
+        <input id="api-key-input" class="field font-mono !text-xs" placeholder="only if you set APP_KEY" />
+        <p class="text-[10px] text-slate-500 mt-1">Set <code>APP_KEY</code> in Script Properties to stop anyone else with the URL reading your data.</p>
+      </div>
+      <button id="save-settings-btn" class="btn btn-primary w-full">Save &amp; sync</button>
     </div>
   </div>
 
-  <script type="module" src="app.js"></script>
+  <div id="toast" class="toast"></div>
+
+  <script src="bodymap.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

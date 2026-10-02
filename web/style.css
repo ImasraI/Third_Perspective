@@ -39,6 +39,15 @@ body {
 
 .glass-card:hover { border-color: rgba(34, 211, 238, 0.25); }
 
+/* Daily target progress rings */
+.ring-circle {
+  transition: stroke-dashoffset 1.4s cubic-bezier(0.4, 0, 0.2, 1);
+  filter: drop-shadow(0 0 6px currentColor);
+}
+#ring-calorie { color: rgba(255, 87, 34, 0.6); }
+#ring-protein { color: rgba(0, 229, 255, 0.6); }
+#ring-budget  { color: rgba(139, 92, 246, 0.6); }
+
 /* Stepper buttons for qty/macros */
 .stepper {
   display: inline-flex;
@@ -113,6 +122,17 @@ body {
   color: #0f172a;
   background: linear-gradient(135deg, var(--color-cyan), #38bdf8);
   box-shadow: 0 6px 18px -6px rgba(34, 211, 238, 0.6);
+}
+.tab-btn.muted-active {
+  color: #0f172a;
+  background: linear-gradient(135deg, #fb923c, #f472b6);
+  box-shadow: 0 6px 18px -6px rgba(251, 146, 60, 0.6);
+}
+
+.tab-panel { animation: fade-up 0.25s ease both; }
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* ============================================================================
@@ -245,6 +265,8 @@ select.field option { background: #0f172a; color: #f1f5f9; }
 .bm-overdue { color: var(--bm-overdue); }
 .bm-cold    { color: var(--bm-cold); }
 .bm-none    { color: var(--bm-none); }
+.bm-region.bm-out { opacity: 0.28; filter: saturate(0.4); }
+.bm-region.bm-out:hover { opacity: 1; }
 
 .bm-legend { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center; }
 .bm-key {

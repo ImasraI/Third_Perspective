@@ -27,8 +27,11 @@ const MUSCLE_EMOJI = {
 };
 
 function muscleTone(m) {
-  if (!m || !m.trained) return 'bm-none';
+  if (!m) return 'bm-none';
   const d = m.daysAgo;
+  // Never trained at all stays neutral; a muscle that WAS trained keeps its
+  // recovery tone even once it falls out of the "trained" window.
+  if (d === null || d === undefined) return 'bm-none';
   if (d === 0) return 'bm-fresh';
   if (d <= 2) return 'bm-recent';
   if (d <= 6) return 'bm-due';
@@ -260,6 +263,7 @@ function renderBodyMap(root, status) {
       ? 'never trained'
       : (m.daysAgo === 0 ? 'trained today' : m.daysAgo + 'd ago');
     g.setAttribute('aria-label', (MUSCLE_LABELS[name] || name) + ': ' + when);
+    g.dataset.days = (m.daysAgo === null || m.daysAgo === undefined) ? '' : m.daysAgo;
     g.dataset.tip = (MUSCLE_EMOJI[name] || '') + ' ' + (MUSCLE_LABELS[name] || name) + ' — ' + when +
       (m.sessions7d ? ' · ' + m.sessions7d + '× this week' : '');
   });

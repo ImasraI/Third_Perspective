@@ -8,7 +8,7 @@ const {
   parseTask,
   autoDetectAndParse,
   parseBankSms
-} = require('../parsers.js');
+} = require('../_archive/parsers.js');
 
 console.log('--- Running Tests for Parsers ---');
 
