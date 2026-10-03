@@ -271,13 +271,9 @@
         <div id="bm-tip" class="bm-tip"></div>
 
         <div id="bm-legend" class="bm-legend justify-center"></div>
-        <div class="flex flex-wrap justify-center gap-3 text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
-          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--bm-fresh)"></span>0-2d</span>
-          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--bm-recent)"></span>3-6d</span>
-          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--bm-due)"></span>7-13d</span>
-          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--bm-overdue)"></span>14d+</span>
-          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--bm-none)"></span>never</span>
-        </div>
+        <!-- The old hardcoded recency swatches (0-2d / 3-6d / …) were removed:
+             colour now means effort everywhere, and buildLegend() renders the
+             chips above with the same classes the figures use. -->
       </div>
 
       <div class="glass-card rounded-3xl p-6 space-y-4">
@@ -582,6 +578,35 @@
   </div>
 
   <div id="toast" class="toast"></div>
+
+  <script>
+    /* Self-heal for stale service workers. This runs from index.html (always
+       network-first), so it works even when a cached app.js has dead buttons:
+       once a new worker takes control, reload once to pick up fresh JS.
+       Append ?fresh=1 to the URL to wipe caches + workers and start clean. */
+    (function () {
+      if (!('serviceWorker' in navigator)) return;
+      var hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!hadController) { hadController = true; return; }
+        if (sessionStorage.getItem('tp-reloaded')) return;
+        sessionStorage.setItem('tp-reloaded', '1');
+        location.reload();
+      });
+      if (new URLSearchParams(location.search).has('fresh')) {
+        sessionStorage.removeItem('tp-reloaded');
+        if (typeof caches !== 'undefined') {
+          caches.keys().then(function (keys) {
+            return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+          });
+        }
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          regs.forEach(function (r) { r.unregister(); });
+        });
+        location.replace(location.pathname);
+      }
+    })();
+  </script>
 
   <script src="notify.js"></script>
   <script src="bodymap.js"></script>

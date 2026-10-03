@@ -40,19 +40,21 @@ function getEffortClass(muscle) {
 
 /** Get a tooltip text for a muscle with effort information */
 function getEffortTooltip(muscle, name) {
-  if (!muscle) return (MUSCLE_EMOJI[name] || '') + ' ' + (MUSCLE_LABELS[name] || name) + ': never trained';
+  const emoji = MUSCLE_EMOJI[name] || '';
+  const label = MUSCLE_LABELS[name] || name;
+  const never = muscle == null || muscle.daysAgo === null || muscle.daysAgo === undefined;
+  if (never) return emoji + ' ' + label + ': never trained';
 
   const level = Math.min(5, Math.max(0, muscle.level || 0));
-  const when = muscle.lastTrained
-    ? muscle.lastTrained === 'today'
-      ? 'trained today'
-      : muscle.lastTrained + 'd ago'
-    : 'never trained';
+  // The backend sends `daysAgo` (Code.js muscleStatus) — not `lastTrained`,
+  // which does not exist, so this used to say "never trained" for everything.
+  const when = muscle.daysAgo === 0 ? 'trained today'
+    : muscle.daysAgo + 'd ago';
 
-  const base = (MUSCLE_EMOJI[name] || '') + ' ' + (MUSCLE_LABELS[name] || name) + ' — ' + when;
-  const effortText = level === 0 ? '' : ` · Effort ${level}/5`;
-  const intensityText = level === 0 ? '' : ` · Intensity ${muscle.intensity}`;
-  const loadText = muscle.load7d ? ` · ${muscle.load7d} load` : '';
+  const base = emoji + ' ' + label + ' — ' + when;
+  const effortText = level === 0 ? '' : ` · Effort ${level}/4`;
+  const intensityText = muscle.intensity ? ` · ${muscle.intensity}× weekly target` : '';
+  const loadText = muscle.load7d ? ` · ${muscle.load7d} kcal/7d` : '';
   const sessionsText = muscle.sessions7d ? ` · ${muscle.sessions7d}× this week` : '';
 
   return base + effortText + intensityText + loadText + sessionsText;
@@ -71,11 +73,11 @@ function buildEffortLegend(status) {
 
   return `
     <div class="bm-effort-legend">
-      <div class="bm-legend-title">Effort Level</div>
+      <div class="bm-legend-title">How hard you've trained it · last 7 days</div>
       <div class="bm-effort-levels">
         ${statusLevels.map(item => `
-          <div class="bm-effort-level ${item.color}">
-            <span class="bm-effort-dot"></span>
+          <div class="bm-effort-level">
+            <span class="bm-effort-dot ${item.color}"></span>
             <span class="bm-effort-label">${item.label}</span>
           </div>
         `).join('')}
@@ -297,18 +299,14 @@ function renderBodyMap(root, status) {
     const name = g.getAttribute('data-muscle');
     const muscle = status[name];
 
-    // Set the effort class based on effort level
     const effortClass = getEffortClass(muscle);
+    // Colour lives on the <g>; children inherit it only where they do not
+    // declare their own fill. The old code force-set fill on EVERY child,
+    // which turned the deliberately stroke-only paths (arms, legs, lats) into
+    // filled blobs and made the figures read wrong.
     g.setAttribute('fill', 'currentColor');
     g.setAttribute('stroke', 'currentColor');
     g.classList.add(effortClass);
-    g.style.color = '';
-
-    // Propagate to children so effort wins over base fill
-    g.querySelectorAll('*').forEach(function (child) {
-      child.setAttribute('fill', 'currentColor');
-      child.setAttribute('stroke', 'currentColor');
-    });
 
     g.setAttribute('tabindex', '0');
     g.setAttribute('role', 'button');
@@ -316,7 +314,10 @@ function renderBodyMap(root, status) {
     // Generate tooltip with effort information
     const tooltip = getEffortTooltip(muscle, name);
     g.setAttribute('aria-label', tooltip);
-    g.dataset.days = muscle?.lastTrained ? '' : '';
+    // Real days-since-trained, so applyBodyWindow() can filter. This used to
+    // assign '' either way, which made every region fade out as out-of-window.
+    g.dataset.days = (muscle && muscle.daysAgo !== null && muscle.daysAgo !== undefined)
+      ? String(muscle.daysAgo) : '';
     g.dataset.tip = tooltip;
   });
 }

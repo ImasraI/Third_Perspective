@@ -236,40 +236,39 @@ function applyBodyWindow() {
   if (!svg) return;
   svg.querySelectorAll('.bm-region').forEach(function (g) {
     const days = parseInt(g.dataset.days, 10);
-    const inWindow = Number.isFinite(days) && days <= max;
+    // Never-trained muscles have no days value and must stay fully visible;
+    // only muscles trained longer ago than the selected window fade back.
+    const inWindow = !Number.isFinite(days) || days <= max;
     g.classList.toggle('bm-out', !inWindow);
   });
   const note = $('#bm-window-note');
-  if (note) note.textContent = 'Highlighted: trained in the last ' + (max + 1) + ' days';
+  if (note) note.textContent = 'Showing effort for the last ' + (max + 1) + ' days';
 }
 
 /**
- * Recovery tone for a muscle's legend dot, using the `--bm-*` scale in
- * style.css: never / 0-2d fresh / 3-6d recent / 7-13d due / 14d+ overdue.
+ * One chip per muscle in the legend.
  *
- * This used to be called without ever being defined, so render() died with
- * "muscleTone is not defined" as soon as real data arrived.
+ * Single colour language: the dot carries the effort class (bm-none /
+ * bm-effort-1..4, same CSS as the figures), while the text carries the
+ * numbers — effort level, days since trained and sessions this week.
+ * This replaces both muscleTone() (recency colours) and the hardcoded
+ * recency swatches, which used to disagree with the effort legend.
  */
-function muscleTone(m) {
-  if (!m || m.daysAgo === null || m.daysAgo === undefined) return 'bm-none';
-  if (m.daysAgo <= 2) return 'bm-fresh';
-  if (m.daysAgo <= 6) return 'bm-recent';
-  if (m.daysAgo <= 13) return 'bm-due';
-  return 'bm-overdue';
-}
-
 function buildLegend(status) {
   const el = $('#bm-legend');
-  el.innerHTML = Object.keys(status).map(k => {
-    const m = status[k];
-    const tone = muscleTone(m);
-    const ago = m.daysAgo === null ? 'never' : (m.daysAgo === 0 ? 'today' : m.daysAgo + 'd');
-    const color = getComputedStyle(document.documentElement)
-      .getPropertyValue('--' + tone.replace('bm-', 'bm-')).trim() || '#2c3a50';
-    return `<span class="bm-key" data-muscle="${k}">
-      <span class="dot" style="background:${color}"></span>
-      ${MUSCLE_LABELS[k] || k}
-      <span class="ago">${ago}${m.sessions7d ? ' · ' + m.sessions7d + '×' : ''}</span>
+  if (!el) return;
+  el.innerHTML = Object.keys(status).map(function (k) {
+    const m = status[k] || {};
+    const tone = getEffortClass(m);
+    const level = Math.max(0, Math.min(4, Number(m.level) || 0));
+    const days = m.daysAgo;
+    const ago = (days === null || days === undefined) ? 'never'
+      : (days === 0 ? 'today' : days + 'd ago');
+    const wk = m.sessions7d ? ' · ' + m.sessions7d + '×/wk' : '';
+    return `<span class="bm-key" data-muscle="${k}" data-tip="${esc(getEffortTooltip(m, k))}">
+      <span class="dot ${tone}"></span>
+      ${esc(MUSCLE_LABELS[k] || k)}
+      <span class="ago">${level}/4 · ${ago}${wk}</span>
     </span>`;
   }).join('');
 }

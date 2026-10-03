@@ -15,7 +15,7 @@
   --bm-due:     #f59e0b;   /* 7-13d  - amber warning */
   --bm-overdue: #ef4444;   /* 14-20d - red overdue */
   --bm-cold:    #64748b;   /* 21+    - cold slate */
-  --bm-none:    #1e293b;   /* never  - dark base */
+  --bm-none:    #475569;   /* never  - visible slate base */
 }
 
 body {
@@ -265,7 +265,32 @@ select.field option { background: #0f172a; color: #f1f5f9; }
 .bm-overdue { color: var(--bm-overdue); }
 .bm-cold    { color: var(--bm-cold); }
 .bm-none    { color: var(--bm-none); }
-.bm-region.bm-out { opacity: 0.28; filter: saturate(0.4); }
+
+/* Effort scale — ONE colour language for the body map: colour = how hard the
+   muscle has been trained (backend level 0-4, intensity vs. your own weekly
+   target). These classes did not exist before, so trained muscles fell back
+   to inherited text colour and the map showed no effort at all. */
+.bm-effort-1 { color: #38bdf8; }   /* light        */
+.bm-effort-2 { color: #22c55e; }   /* solid        */
+.bm-effort-3 { color: #f59e0b; }   /* hard         */
+.bm-effort-4 { color: #f97316; }   /* very hard    */
+.bm-effort-5 { color: #ef4444; }   /* maxed out    */
+
+/* Effort legend rendered under the figures by bodymap.js */
+.bm-effort-legend { margin-top: 0.85rem; text-align: center; }
+.bm-legend-title {
+  font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+  font-weight: 700; color: #64748b; margin-bottom: 0.45rem;
+}
+.bm-effort-levels { display: flex; flex-wrap: wrap; gap: 0.45rem 0.9rem; justify-content: center; }
+.bm-effort-level { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.68rem; font-weight: 600; color: #cbd5e1; }
+.bm-effort-dot {
+  width: 10px; height: 10px; border-radius: 9999px;
+  background: currentColor; box-shadow: 0 0 6px currentColor;
+}
+.bm-effort-label { color: #94a3b8; }
+
+.bm-region.bm-out { opacity: 0.4; filter: saturate(0.5); }
 .bm-region.bm-out:hover { opacity: 1; }
 
 .bm-legend { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center; }
@@ -284,7 +309,7 @@ select.field option { background: #0f172a; color: #f1f5f9; }
   cursor: pointer;
 }
 .bm-key:hover { border-color: rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.08); }
-.bm-key .dot { width: 8px; height: 8px; border-radius: 9999px; }
+.bm-key .dot { width: 8px; height: 8px; border-radius: 9999px; background: currentColor; }
 .bm-key .ago { font-family: ui-monospace, monospace; font-size: 0.64rem; color: #64748b; }
 
 .bm-tip {

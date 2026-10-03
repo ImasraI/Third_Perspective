@@ -1,9 +1,12 @@
 /* ThirdPerspective service worker: cache the app shell only, never the backend.
    Also acts as the display layer for reminders, so notifications survive the page
-   being closed (see web/notify.js for how they are scheduled). */
-/* Bump this whenever a cached shell asset changes, otherwise stale-while-
-   revalidate keeps serving the previously cached copy of app.js/bodymap.js. */
-const CACHE_NAME = 'thirdperspective-v2';
+   being closed (see web/notify.js for how they are scheduled).
+
+   Strategy: NETWORK-FIRST for everything on this origin. A deploy must be picked
+   up on the very next load — the old stale-while-revalidate copy kept serving a
+   broken app.js (dead buttons) on devices that had already visited the site.
+   The cache is only the offline fallback now. */
+const CACHE_NAME = 'thirdperspective-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -28,30 +31,30 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  const url = e.request.url;
+  const req = e.request;
+  if (req.method !== 'GET') return;
 
-  // The Apps Script backend must always hit the network.
+  const url = new URL(req.url);
+
+  // The Apps Script backend must always hit the network, untouched.
   if (url.includes('script.google.com') || url.includes('googleusercontent.com')) return;
-  if (e.request.method !== 'GET') return;
+  // Third-party CDNs (fonts, Tailwind, Chart.js, lucide) are not ours to cache.
+  if (url.origin !== self.location.origin) return;
 
-  // Navigations: network first, fall back to the cached shell when offline.
-  if (e.request.mode === 'navigate') {
-    e.respondWith(fetch(e.request).catch(() => caches.match('./index.html')));
-    return;
-  }
-
-  // Everything else: stale-while-revalidate.
+  // Same origin: try the network first, keep the cache as the offline fallback.
+  // Navigations fall back to the cached shell so the app opens without a network.
   e.respondWith(
-    caches.match(e.request).then((hit) => {
-      const net = fetch(e.request).then((res) => {
+    fetch(req)
+      .then((res) => {
         if (res && res.ok) {
           const copy = res.clone();
-          caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy));
         }
         return res;
-      }).catch(() => hit);
-      return hit || net;
-    })
+      })
+      .catch(() =>
+        caches.match(req).then((hit) => hit || (req.mode === 'navigate' ? caches.match('./index.html') : undefined))
+      )
   );
 });
 
