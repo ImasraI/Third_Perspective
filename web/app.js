@@ -880,6 +880,118 @@ async function parsePhoto() {
   }
 }
 
+/* ============================================================================
+   WORKOUT PHOTO -> MUSCLES + EFFORT (Gemini vision)
+   ----------------------------------------------------------------------------
+   The backend exposes parse.workout.image (workoutVisionAction). The photo is
+   downscaled here so the upload stays small; anything typed in the workout box
+   rides along as a hint. The estimate fills the muscle chips + effort bars.
+   ========================================================================== */
+
+function clearWkPhoto() {
+  S.workoutPhoto = null;
+  const box = $('#wk-photo-preview');
+  if (box) box.classList.add('hidden');
+  const input = $('#wk-photo');
+  if (input) input.value = '';
+}
+
+/** Shrink to max 1280px edge and re-encode as JPEG so the upload stays small. */
+function prepareWkPhoto(dataUrl, done) {
+  const img = new Image();
+  img.onload = function () {
+    const maxEdge = 1280;
+    const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    let out = c.toDataURL('image/jpeg', 0.75);
+    // ~4 base64 chars per 3 bytes; stay comfortably under the server cap.
+    if (out.length * 0.75 > 1900000) out = c.toDataURL('image/jpeg', 0.55);
+    done(out);
+  };
+  img.onerror = function () { toast('Could not read that image', 'err'); };
+  img.src = dataUrl;
+}
+
+function onWkPhotoPicked(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function () {
+    prepareWkPhoto(reader.result, function (b64) {
+      S.workoutPhoto = b64;
+      $('#wk-photo-img').src = b64;
+      $('#wk-photo-size').textContent =
+        Math.round(b64.length * 0.75 / 1024) + ' KB · auto-downscaled';
+      $('#wk-photo-preview').classList.remove('hidden');
+      lucide.createIcons();
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+/** Populate the muscle chips + effort from a workout-photo estimate. */
+function renderWkEstimate(r) {
+  const box = $('#wk-estimated-box');
+  box.classList.remove('hidden');
+  const muscles = r.muscles || [];
+  const effort = r.effort || [];
+  const effortByMuscle = {};
+  (effort || []).forEach(function (e) { effortByMuscle[e.muscle] = e.level; });
+  const names = MUSCLE_LABELS || {};
+  box.innerHTML = muscles.map(function (m) {
+    const lvl = effortByMuscle[m] || 0;
+    const effClass = lvl === 0 ? 'none' : 'bm-effort-' + Math.min(5, lvl);
+    return `<div class="flex items-center gap-2">
+      <span class="chip ${lvl === 0 ? 'hidden' : ''}" data-mus="${m}">${names[m] || m} <span class="bm-effort-dot ${effClass}" title="Effort ${lvl}/4"></span></span>
+      <span class="text-[11px] text-slate-500">${lvl === 0 ? 'not trained' : lvl === 1 ? 'light' : lvl === 2 ? 'moderate' : lvl === 3 ? 'hard' : 'maximal'}</span>
+    </div>`;
+  }).join('') || '<div class="text-[11px] text-slate-500">No muscles detected in the photo.</div>';
+  $('#wk-estimated-box').classList.remove('hidden');
+  $('#wk-estimated-box').innerHTML = box.innerHTML;
+  // Seed the toggle set so the Save button logs the estimated muscles.
+  S.workoutEditMuscles = new Set(muscles.filter(function (m) { return effortByMuscle[m] > 0; }));
+  // Mirror chips into the workout form too.
+  const form = $('#wk-muscles');
+  form.innerHTML = muscles.map(function (m) {
+    const on = effortByMuscle[m] > 0;
+    return `<span class="chip ${on ? 'on' : ''}" data-mus="${m}">${names[m] || m}</span>`;
+  }).join('');
+  // Mirror effort dots into the workout form where they are rendered later.
+  $('#wk-muscles').querySelectorAll('[data-mus]').forEach(function (chip) {
+    const lvl = effortByMuscle[chip.dataset.mus] || 0;
+    const dot = lvl === 0 ? 'none' : 'bm-effort-' + Math.min(5, lvl);
+    chip.innerHTML += ` <span class="bm-effort-dot ${dot}"></span>`;
+  });
+  const conf = r.confidence ? ' · confidence ' + r.confidence.toFixed(2) : '';
+  toast(r.rough
+    ? 'Rough muscle estimate — check the chips before saving'
+    : 'Muscle estimate ready',
+    r.rough ? 'warn' : 'ok');
+}
+
+async function estimateWorkoutMuscles() {
+  const hint = $('#wk-input').value.trim();
+  $('#wk-ai-status').classList.remove('hidden');
+  $('#wk-estimate').disabled = true;
+  try {
+    const r = await api('parse.workout.image', { image: S.workoutPhoto, hint: hint });
+    if (!r.ok || r.recognised === false || (!r.muscles && !r.effort)) {
+      toast(r.note || (r.error || 'Could not estimate from that photo'), 'warn');
+      return;
+    }
+    renderWkEstimate(r);
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    $('#wk-ai-status').classList.add('hidden');
+    $('#wk-estimate').disabled = false;
+  }
+}
+
 async function logParsed() {
   if (!S.parsed.length) return;
   const btn = $('#food-add');
@@ -1267,6 +1379,9 @@ function bind() {
       if (S.workoutEditPanelOpen) swapMuscleSet($('#wk-muscles'), $('#workout-edit-muscles'));
     }
   });
+  $('#wk-photo').addEventListener('change', onWkPhotoPicked);
+  $('#wk-photo-clear').addEventListener('click', clearWkPhoto);
+  $('#wk-estimate').addEventListener('click', estimateWorkoutMuscles);
   $('#wk-save').addEventListener('click', saveWorkout);
   let wkTimer;
   $('#wk-input').addEventListener('input', () => {

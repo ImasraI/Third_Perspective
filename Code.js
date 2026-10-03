@@ -833,6 +833,7 @@ const ROUTES = {
   'parse': parseAction,
   'parse.workout': function (r) { return parseWorkoutAction(r); },
   'parse.image': function (r) { return visionAction(r); },
+  'parse.workout.image': function (r) { return parseWorkoutImage(r); },
   'chat': function (r) { return assistantAction(r); },
   'gemini.test': function () { return geminiTest(); },
   'log.food': function (r) { return logFood(r); },
@@ -1499,15 +1500,89 @@ function parseWorkoutAction(req) {
   };
 }
 
-function geminiTest() {
-  if (!getGeminiKey()) return { ok: false, error: 'GEMINI_API_KEY is not set in Script Properties' };
-  const res = callGemini(
-    'Reply with the single word: OK',
-    { type: 'object', properties: { ok: { type: 'string' } }, required: ['ok'] }
+/**
+ * Vision estimate of a WORKOUT photo: muscle groups worked + how hard each was
+ * trained + a rough overall intensity. The prompt is deliberately about
+ * effort/muscles, NOT nutrition (that is parse.image's job).
+ */
+function parseWorkoutImage(req) {
+  const raw = String(req.image || req.data || '').trim();
+  if (!raw) return { ok: false, error: 'No image received' };
+
+  const image = normaliseImagePayload(raw);
+  if (image.error) return { ok: false, error: image.error };
+  if (!getGeminiKey()) {
+    return { ok: false, error: 'Workout photos need GEMINI_API_KEY set in Script Properties', needsKey: true };
+  }
+
+  const hint = String(req.hint || '').trim();
+  const prompt =
+    'You are a workout and strength-training assistant.\n\n' +
+    'TASK: look at this photo of a person exercising and estimate WHAT muscles\n' +
+    'they are training and HOW HARD for each muscle. Do NOT give nutrition.\n\n' +
+    'CRITICAL RULES:\n' +
+    '1. Output a JSON object, not prose: { exercises: [names], muscles: [lowercase\n' +
+    '   muscle name, e.g. chest/biceps/quads], effort: [ { muscle: name, level: 0..4 } ] }.\n' +
+    '2. `level` is 0 (untrained) to 4 (maximal effort); 1 = light, 2 = moderate,\n' +
+    '   3 = hard, 4 = very hard / near failure.\n' +
+    '3. Include every muscle visibly doing work: not just the prime mover but\n' +
+    '   stabilisers and the grip/forearms when gripping something.\n' +
+    '4. If the photo is just a person stretching or walking, set recognised=false\n' +
+    '   and leave muscles empty. Do NOT guess a generic "gym session".\n' +
+    '5. `effort` uses the canonical muscle names: neck, traps, front-delts,\n' +
+    '   side-delts, rear-delts, chest, back, biceps, triceps, forearms, abs,\n' +
+    '   obliques, lower-back, glutes, quads, hamstrings, calves.\n' +
+    '6. `confidence` is 0..1 for how sure you are about the muscle/effort split.\n' +
+    (hint ? '\nThe user added this context: ' + hint + '\n' : '') +
+    '\nReturn JSON only.';
+
+  const res = callGeminiParts(
+    [{ inline_data: { mime_type: image.mimeType, data: image.base64 } }, { text: prompt }],
+    VISION_SCHEMA
   );
-  return res.ok
-    ? { ok: true, model: CONFIG.GEMINI_MODEL, response: res.data }
-    : { ok: false, error: res.error };
+  if (!res.ok) return { ok: false, error: res.error };
+
+  const d = res.data || {};
+  // A failure means the photo is not a clear training shot (stretching, walking,
+  // non-human). Report it honestly rather than inventing muscles.
+  if (d.recognised === false || !d.muscles || !d.muscles.length) {
+    return {
+      ok: true,
+      recognised: false,
+      source: 'gemini-vision',
+      problem: d.problem && d.problem !== 'none' ? d.problem : 'unclear',
+      note: d.note || 'I could not tell what is being trained in this photo. Try a closer, well-lit shot.',
+      muscles: [],
+      effort: [],
+      rough: false
+    };
+  }
+
+  // Normalise legacy muscle words (shoulders -> the three delt heads) to match
+  // the app's canonical list.
+  const muscles = [];
+  const effort = [];
+  (d.muscles || []).forEach(function (m) {
+    const canonical = expandMuscles([m])[0] || String(m).trim().toLowerCase();
+    if (muscles.indexOf(canonical) === -1) muscles.push(canonical);
+  });
+  (d.effort || []).forEach(function (e) {
+    const level = Math.max(0, Math.min(4, Number(e.level) || 0));
+    const m = expandMuscles([e.muscle || ''])[0] || String(e.muscle || '').trim().toLowerCase();
+    if (m) effort.push({ muscle: m, level: level });
+  });
+
+  return {
+    ok: true,
+    recognised: true,
+    source: 'gemini-vision',
+    exercises: d.exercises || [],
+    muscles: muscles,
+    effort: effort,
+    rough: (num(d.confidence) || 0) < 0.5,
+    note: d.note || '',
+    confidence: num(d.confidence) || 0
+  };
 }
 
 const PARSE_SCHEMA = {
