@@ -77,7 +77,10 @@ function baseBrowser(opts) {
 }
 
 const state = {
-  tasks: [{ rowId: 2, task: 'Submit lab', due: 'today 6pm', completed: false, priority: 'High' }],
+  // "in 2 hours" rather than "today 6pm": this fixture runs against the real
+  // wall clock (buildPlan takes `now`), so a fixed evening time makes these
+  // assertions silently pass during the day and fail after 18:00.
+  tasks: [{ rowId: 2, task: 'Submit lab', due: 'in 2 hours', completed: false, priority: 'High' }],
   classes: [{ rowId: 2, day: 'Monday', time: '11:00', subject: 'Physics', room: 'Hall 3' }],
   workouts: {
     muscleStatus: {

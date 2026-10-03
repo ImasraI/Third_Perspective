@@ -100,7 +100,7 @@ function render() {
   renderRings(d);
   renderMetrics(d);
   renderTodayFoods(d);
-  renderTasksInto('#today-tasks', d.tasks.filter(t => t.status !== 'Completed'), true);
+  renderTasksInto('#today-tasks', d.tasks.filter(t => t.status !== 'Completed' && !isShopItem(t)), true);
   renderFoodLog(d);
   renderLibrary(d);
   renderBody(d);
@@ -108,6 +108,7 @@ function render() {
   renderExpenses(d);
   renderStudy(d);
   renderTasks();
+  renderShopping(d);
   renderClasses(d);
   renderGoals(d);
   drawCharts(d);
@@ -151,7 +152,7 @@ function renderRings(d) {
 }
 
 function renderMetrics(d) {
-  const open = d.tasks.filter(t => t.status !== 'Completed').length;
+  const open = d.tasks.filter(t => t.status !== 'Completed' && !isShopItem(t)).length;
   $('#m-spent').textContent = fmt(d.expenses.todayTotal);
   $('#m-study').textContent = d.study.todayMinutes + 'm';
   $('#m-workout').textContent = d.workouts.today.length;
@@ -340,11 +341,64 @@ function renderTasksInto(sel, list, compact) {
 
 function renderTasks() {
   if (!S.data) return;
-  const open = S.data.tasks.filter(t => t.status !== 'Completed');
-  const done = S.data.tasks.filter(t => t.status === 'Completed');
+  const open = S.data.tasks.filter(t => t.status !== 'Completed' && !isShopItem(t));
+  const done = S.data.tasks.filter(t => t.status === 'Completed' && !isShopItem(t));
   $('#task-open').textContent = open.length;
   renderTasksInto('#task-open-list', open, false);
   renderTasksInto('#task-done-list', done, false);
+}
+
+/* ============================================================================
+   SHOPPING LIST
+   ----------------------------------------------------------------------------
+   Items are ordinary rows in the Tasks sheet carrying priority "Shopping",
+   so add / tick / delete reuse the existing task.add, task.toggle and
+   entry.delete actions — no backend change, no re-upload of Code.js.
+   ========================================================================== */
+
+const isShopItem = t => t.priority === 'Shopping';
+
+function renderShopping(d) {
+  const el = $('#shop-list');
+  if (!el) return;
+  const items = d.tasks.filter(isShopItem);
+  const open = items.filter(t => t.status !== 'Completed');
+  const done = items.filter(t => t.status === 'Completed');
+  const count = $('#shop-count');
+  if (count) count.textContent = open.length;
+
+  if (!items.length) {
+    el.innerHTML = '<div class="text-center py-6 text-sm text-slate-500">List is empty — add your first item</div>';
+    return;
+  }
+  // Open items on top, bought ones underneath so ticking never reorders
+  // the list under your finger.
+  el.innerHTML = open.concat(done).map(t => {
+    const bought = t.status === 'Completed';
+    return `
+    <div class="list-row">
+      <div class="tick ${bought ? 'on' : ''}" data-task="${t.rowId}">
+        ${bought ? '<i data-lucide="check"></i>' : ''}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-semibold ${bought ? 'line-through text-slate-500' : 'text-slate-100'} truncate">${esc(t.task)}</div>
+      </div>
+      ${rowDelete('Tasks', t.rowId)}
+    </div>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+async function addShoppingItem() {
+  const input = $('#shop-input');
+  const name = input.value.trim();
+  if (!name) { toast('Type an item first', 'warn'); return; }
+  try {
+    await api('task.add', { task: name, priority: 'Shopping' });
+    input.value = '';
+    toast('Added to the shopping list', 'ok');
+    await load();
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 function renderClasses(d) {
@@ -1012,6 +1066,12 @@ function bind() {
   });
   $('#task-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); $('#task-save').click(); }
+  });
+
+  // shopping list
+  $('#shop-add').addEventListener('click', addShoppingItem);
+  $('#shop-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addShoppingItem(); }
   });
 
   // classes

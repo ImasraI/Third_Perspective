@@ -441,6 +441,24 @@
         </button>
       </div>
 
+      <!-- ===================== SHOPPING LIST ===================== -->
+      <div class="glass-card rounded-3xl p-6 space-y-4">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="shopping-cart" class="w-4 h-4 text-brand-orange"></i> Shopping list
+          <span id="shop-count" class="text-xs font-mono text-slate-500">0</span>
+        </h3>
+        <div class="flex gap-2">
+          <input id="shop-input" class="field flex-1" autocomplete="off" placeholder="Milk, eggs, washing powder…" />
+          <button id="shop-add" class="btn btn-food">
+            <i data-lucide="plus" class="w-4 h-4"></i> Add
+          </button>
+        </div>
+        <div id="shop-list" class="space-y-2 max-h-80 overflow-y-auto pr-1">
+          <div class="text-center py-6 text-sm text-slate-500">List is empty — add your first item</div>
+        </div>
+        <p class="text-[11px] text-slate-500">Tick an item when you've got it, tap the bin to remove it.</p>
+      </div>
+
       <div class="glass-card rounded-3xl p-6 space-y-3">
         <h3 class="text-base font-bold text-white flex items-center gap-2">
           <i data-lucide="inbox" class="w-4 h-4 text-brand-cyan"></i> Open
