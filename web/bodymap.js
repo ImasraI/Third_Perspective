@@ -321,11 +321,15 @@ function renderBodyMap(root, status) {
   });
 }
 
-module.exports = {
-  renderBodyMap,
-  getEffortClass,
-  buildEffortLegend,
-  getEffortTooltip,
-  MUSCLE_LABELS,
-  MUSCLE_EMOJI
-};
+// Browser-safe export: in the PWA `module` does not exist, and an unguarded
+// assignment here threw "module is not defined" on every page load.
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    renderBodyMap,
+    getEffortClass,
+    buildEffortLegend,
+    getEffortTooltip,
+    MUSCLE_LABELS,
+    MUSCLE_EMOJI
+  };
+}

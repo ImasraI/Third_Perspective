@@ -677,7 +677,10 @@ function capability() {
   return bits.join(' ');
 }
 
-const api = {
+/* NB: this must NOT be called `api` — app.js declares a global `function api`
+   for its backend calls, and a top-level `const api` here collides with it,
+   killing app.js with "Identifier 'api' has already been declared". */
+const NotifyApi = {
   LS_NOTIFY: LS_NOTIFY,
   QUIET_START: QUIET_START,
   QUIET_END: QUIET_END,
@@ -709,5 +712,5 @@ const api = {
   state: rt
 };
 
-if (typeof module !== 'undefined' && module.exports) module.exports = api;
-if (typeof globalThis !== 'undefined') globalThis.TPNotify = api;
+if (typeof module !== 'undefined' && module.exports) module.exports = NotifyApi;
+if (typeof globalThis !== 'undefined') globalThis.TPNotify = NotifyApi;

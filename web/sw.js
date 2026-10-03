@@ -1,7 +1,9 @@
 /* ThirdPerspective service worker: cache the app shell only, never the backend.
    Also acts as the display layer for reminders, so notifications survive the page
    being closed (see web/notify.js for how they are scheduled). */
-const CACHE_NAME = 'thirdperspective-v1';
+/* Bump this whenever a cached shell asset changes, otherwise stale-while-
+   revalidate keeps serving the previously cached copy of app.js/bodymap.js. */
+const CACHE_NAME = 'thirdperspective-v2';
 const ASSETS = [
   './',
   './index.html',

@@ -243,6 +243,21 @@ function applyBodyWindow() {
   if (note) note.textContent = 'Highlighted: trained in the last ' + (max + 1) + ' days';
 }
 
+/**
+ * Recovery tone for a muscle's legend dot, using the `--bm-*` scale in
+ * style.css: never / 0-2d fresh / 3-6d recent / 7-13d due / 14d+ overdue.
+ *
+ * This used to be called without ever being defined, so render() died with
+ * "muscleTone is not defined" as soon as real data arrived.
+ */
+function muscleTone(m) {
+  if (!m || m.daysAgo === null || m.daysAgo === undefined) return 'bm-none';
+  if (m.daysAgo <= 2) return 'bm-fresh';
+  if (m.daysAgo <= 6) return 'bm-recent';
+  if (m.daysAgo <= 13) return 'bm-due';
+  return 'bm-overdue';
+}
+
 function buildLegend(status) {
   const el = $('#bm-legend');
   el.innerHTML = Object.keys(status).map(k => {
