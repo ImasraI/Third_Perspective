@@ -114,7 +114,7 @@ function render() {
   renderStudy(d);
   renderTasks();
   renderShopping(d);
-  renderClasses(d);
+  if (S.calendar) renderCalendar();
   renderGoals(d);
   drawCharts(d);
 }
@@ -423,18 +423,228 @@ async function addShoppingItem() {
   } catch (e) { toast(e.message, 'err'); }
 }
 
-function renderClasses(d) {
-  const el = $('#cl-list');
-  if (!d.classes.length) { el.innerHTML = '<div class="text-center py-6 text-sm text-slate-500">No classes yet</div>'; return; }
-  el.innerHTML = d.classes.map(c => `
-    <div class="list-row">
-      <span class="badge badge-ai">${esc(c.day)}</span>
-      <div class="flex-1 min-w-0">
-        <div class="text-sm font-semibold text-slate-100">${esc(c.subject)}</div>
-        <div class="text-[11px] text-slate-500 font-mono">${esc(c.time)} ${esc(c.room)}</div>
-      </div>
-      ${rowDelete('Classes', c.rowId)}
-    </div>`).join('');
+/* ============================================================================
+   CALENDAR (Google Calendar style)
+   The MORE tab becomes a full month/week/day calendar: month grid, week list,
+   and a day detail with time blocks. Classes come from classState() (SHEETS.CLASSES).
+   ========================================================================== */
+
+const COLORS = {
+  cyan: '#22d3ee',
+  purple: '#a855f7',
+  green: '#22c55e',
+  orange: '#fb923c',
+  pink: '#ec4899',
+  amber: '#f59e0b',
+  red: '#ef4444',
+  slate: '#64748b'
+};
+
+function renderCalendar() {
+  const d = S.data;
+  if (!d) return;
+  const today = new Date();
+  const view = S.calendar.view;
+  const start = S.calendar.start;
+  const end = S.calendar.end;
+
+  const title = $('#cal-title');
+  if (view === 'month') {
+    title.textContent = start ? (start.getFullYear() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][start.getMonth()]) : 'Month';
+    $('#cal-grid').classList.remove('hidden');
+    $('#cal-list-view').classList.add('hidden');
+    $('#cal-day-view').classList.add('hidden');
+    renderMonthGrid(today, start, end);
+  } else if (view === 'week') {
+    const label = start ? dayName(start.getDay()) + ' ' + (start.getMonth()+1) + '/' + start.getDate() + ' - ' + (end ? end.getMonth()+1 : '') + '/' + (end ? end.getDate() : '') : 'Week';
+    title.textContent = label;
+    $('#cal-grid').classList.add('hidden');
+    $('#cal-list-view').classList.remove('hidden');
+    $('#cal-day-view').classList.add('hidden');
+    renderWeekList(today, start, end);
+  } else {
+    const label = start ? (start.getMonth()+1) + '/' + start.getDate() : 'Day';
+    title.textContent = label;
+    $('#cal-grid').classList.add('hidden');
+    $('#cal-list-view').classList.add('hidden');
+    $('#cal-day-view').classList.remove('hidden');
+    renderDayView(today, start, end);
+  }
+}
+
+const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const DAY_NAMES_FULL = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const MEMORY = {};
+
+function dayName(d) { return DAY_NAMES[d]; }
+function dayNameFull(d) { return DAY_NAMES_FULL[d]; }
+function weekStart(d, firstDay) { // Monday-based week start
+  const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = copy.getDay();
+  const diff = (day === 0 ? 6 : day - 1); // Sunday -> 6 (Monday-based)
+  copy.setDate(copy.getDate() - diff);
+  return copy;
+}
+function weekEnd(d) { const e = new Date(d); e.setDate(e.getDate() + 6); return e; }
+function dayStart(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function dayEnd(d) { const e = new Date(d); e.setDate(e.getDate() + 1); return e; }
+function monthStart(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function monthEnd(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
+
+function dayBucket(date) { return date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2,'0') + '-' + String(date.getDate()).padStart(2,'0'); }
+
+function isSameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+
+function fmtDate(d) { return (d.getMonth()+1) + '/' + d.getDate() + '/' + d.getFullYear(); }
+
+function findClass(date, time) {
+  const key = dayBucket(date);
+  const classes = S.data.classes || [];
+  return classes.filter(c => c.date === key && c.time && c.time <= time);
+}
+
+/** Determine the class that is active at a given wall-clock time. */
+function activeClassOn(date, time) {
+  const classes = S.data.classes || [];
+  const candidates = classes.filter(c => c.date === dayBucket(date));
+  let best = null, bestEnd = -1;
+  candidates.forEach(c => {
+    const [h, m] = String(c.time || '00:00').split(':').map(Number);
+    const startMin = h * 60 + m;
+    const endRaw = String(c.endTime || '00:00').split(':').map(Number);
+    const endMin = (endRaw[0] || 0) * 60 + (endRaw[1] || 0);
+    if (startMin <= time && endMin > time && endMin > bestEnd) {
+      best = c; bestEnd = endMin;
+    }
+  });
+  return best;
+}
+
+function renderMonthGrid(today, start, end) {
+  const body = $('#cal-grid-body');
+  const year = start.getFullYear();
+  const month = start.getMonth();
+  const first = new Date(year, month, 1);
+  const startDay = first.getDay(); // 0=Sun
+  const rows = Math.ceil((startDay + monthEnd(start).getDate()) / 7);
+  const cols = 7;
+  const cells = rows * cols;
+  const totalDays = monthEnd(start).getDate() + startDay;
+  const cellsMap = {};
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(year, month, i - startDay + 1);
+    cellsMap[i] = d;
+  }
+
+  const classes = S.data.classes || [];
+  const byDate = {};
+  classes.forEach(c => { if (!byDate[c.date]) byDate[c.date] = []; byDate[c.date].push(c); });
+
+  // Weekdays first, then weekend rows.
+  const weekdayCount = startDay <= 5 ? 5 - startDay + 1 : 0;
+  const weekendCount = cells - weekdayCount;
+
+  let html = '';
+  // Weekday rows
+  const wdRows = Math.ceil(weekdayCount / 7);
+  for (let r = 0; r < wdRows; r++) {
+    html += '<div class="grid grid-cols-7 gap-px bg-slate-800/40 rounded-lg overflow-hidden">';
+    for (let c = 0; c < 7; c++) {
+      const i = r * 7 + c;
+      if (i >= weekdayCount) break;
+      const d = cellsMap[i];
+      const active = isSameDay(d, today);
+      const isToday = isSameDay(d, today);
+      html += '<div class="bg-slate-800/60 p-1 text-center rounded-t-lg">';
+      html += '<div class="text-[11px] font-semibold uppercase text-slate-400">' + d.getDate() + '</div>';
+      const dayClasses = byDate[dayBucket(d)] || [];
+      html += '<div class="space-y-0.5">' + dayClasses.map(c => {
+        const col = COLORS[c.color] || '#64748b';
+        return '<div class="calendar-event" style="border-left:3px solid ' + col + ';background:rgba(34,211,238,0.08);color:#e2e8f0;padding:2px 4px;border-radius:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(c.subject) + '</div>';
+      }).join('') + '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  // Weekend rows
+  const startWeekend = weekdayCount;
+  const weRows = Math.ceil(weekendCount / 7);
+  for (let r = 0; r < weRows; r++) {
+    html += '<div class="grid grid-cols-7 gap-px bg-slate-800/40 rounded-lg overflow-hidden">';
+    for (let c = 0; c < 7; c++) {
+      const i = startWeekend + r * 7 + c;
+      if (i >= cells) break;
+      const d = cellsMap[i];
+      const active = isSameDay(d, today);
+      const isToday = isSameDay(d, today);
+      html += '<div class="bg-slate-800/60 p-1 text-center rounded-t-lg">';
+      html += '<div class="text-[11px] font-semibold uppercase text-slate-400">' + d.getDate() + '</div>';
+      const dayClasses = byDate[dayBucket(d)] || [];
+      html += '<div class="space-y-0.5">' + dayClasses.map(c => {
+        const col = COLORS[c.color] || '#64748b';
+        return '<div class="calendar-event" style="border-left:3px solid ' + col + ';background:rgba(34,211,238,0.08);color:#e2e8f0;padding:2px 4px;border-radius:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(c.subject) + '</div>';
+      }).join('') + '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  body.innerHTML = html;
+}
+
+function renderWeekList(today, start, end) {
+  const el = $('#cal-list');
+  const days = [];
+  const s = start ? new Date(start) : weekStart(today, 1);
+  const e = end ? new Date(end) : weekEnd(s);
+  while (s <= e) { days.push(new Date(s)); s.setDate(s.getDate() + 1); }
+  el.innerHTML = days.map(d => {
+    const active = isSameDay(d, today);
+    const classes = S.data.classes || [];
+    const dayClasses = classes.filter(c => c.date === dayBucket(d));
+    const label = dayNameFull(d) + ' ' + fmtDate(d);
+    return '<div class="list-row rounded-2xl p-2 " data-date="' + dayBucket(d) + '">' +
+      '<div class="flex items-center justify-between w-full">' +
+      '<div class="flex-1 min-w-0"><div class="text-sm font-semibold text-white truncate">' + esc(label) + '</div>' +
+      '<div class="text-[11px] text-slate-500">' + (dayClasses.length ? dayClasses.length + ' class' + (dayClasses.length>1?'s':'') : 'No class') + '</div></div>';
+    if (dayClasses.length) {
+      el.insertAdjacentHTML('beforeend', '<div class="ml-4">' + dayClasses.map(c => {
+        const col = COLORS[c.color] || '#64748b';
+        return '<span class="badge badge-ai" style="background:' + col + ';color:#04121f">' + esc(c.subject) + '</span>';
+      }).join('') + '</div>');
+    }
+    el.insertAdjacentHTML('beforeend', '<div class="ml-4"><button class="btn btn-ghost btn-xs" data-date="' + dayBucket(d) + '">View</button></div>');
+    el.insertAdjacentHTML('beforeend', '</div>');
+  }).join('');
+}
+
+function renderDayView(today, start, end) {
+  const el = $('#cal-day-body');
+  if (!start) return;
+  const date = start;
+  const time = new Date().getHours() * 60 + new Date().getMinutes();
+  const classes = S.data.classes || [];
+  const dayClasses = classes.filter(c => c.date === dayBucket(date));
+  const open = (() => { const h = new Date().getHours(); return h >= 6 && h < 22; })();
+  if (!open) {
+    el.innerHTML = '<div class="text-center py-10 text-sm text-slate-500">Calendar app is offline · reload the page to reconnect</div>';
+    return;
+  }
+  el.innerHTML = dayClasses.map(c => {
+    const col = COLORS[c.color] || '#64748b';
+    const [h] = String(c.time || '00:00').split(':').map(Number);
+    const hrs = h % 12 || 12;
+    const ampm = h < 12 ? 'AM' : 'PM';
+    return '<div class="glass-card rounded-2xl p-3 relative" style="border-top:4px solid ' + col + '">' +
+      '<div class="flex items-center justify-between">' +
+      '<div class="font-mono text-sm font-bold text-white">' + hrs + ' ' + ampm + '</div>' +
+      '<div class="font-semibold text-white">' + esc(c.subject) + '</div>' +
+      '</div>' +
+      '<div class="text-[11px] text-slate-500">' + esc(c.room || '') + ' · ' + esc(c.time) + (c.endTime ? ' - ' + c.endTime : '') + '</div>' +
+      '<div class="text-[11px] text-slate-400">' + (c.repeat === 'daily' ? 'Every day' : c.repeat === 'weekly' ? 'Every week' : c.repeat === 'monthly' ? 'Every month' : 'Once') + '</div>' +
+      '<div class="mt-1">' + (c.color === 'cyan' ? '<span class="w-3 h-3 rounded-full" style="background:#22d3ee"></span>' : c.color === 'purple' ? '<span class="w-3 h-3 rounded-full" style="background:#a855f7"></span>' : c.color === 'green' ? '<span class="w-3 h-3 rounded-full" style="background:#22c55e"></span>' : c.color === 'orange' ? '<span class="w-3 h-3 rounded-full" style="background:#fb923c"></span>' : c.color === 'pink' ? '<span class="w-3 h-3 rounded-full" style="background:#ec4899"></span>' : c.color === 'amber' ? '<span class="w-3 h-3 rounded-full" style="background:#f59e0b"></span>' : c.color === 'red' ? '<span class="w-3 h-3 rounded-full" style="background:#ef4444"></span>' : '<span class="w-3 h-3 rounded-full" style="background:#64748b"></span>') + '</div>' +
+      '<div class="mt-2 text-[11px] text-slate-400">rowId ' + c.rowId + '</div>' +
+      '</div>';
+  }).join('') || '<div class="text-center py-10 text-sm text-slate-500">No classes on this day</div>';
 }
 
 function renderGoals(d) {
@@ -1440,17 +1650,89 @@ function bind() {
   });
 
   // classes
+  // calendar
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+  $('#cal-prev').addEventListener('click', () => {
+    if (S.calendar.view === 'month') {
+      S.calendar.start.setMonth(S.calendar.start.getMonth() - 1);
+    } else if (S.calendar.view === 'week') {
+      S.calendar.start.setDate(S.calendar.start.getDate() - 7);
+    } else {
+      S.calendar.start.setDate(S.calendar.start.getDate() - 1);
+    }
+    S.calendar.end = null;
+    renderCalendar();
+  });
+  $('#cal-next').addEventListener('click', () => {
+    if (S.calendar.view === 'month') {
+      S.calendar.start.setMonth(S.calendar.start.getMonth() + 1);
+    } else if (S.calendar.view === 'week') {
+      S.calendar.start.setDate(S.calendar.start.getDate() + 7);
+    } else {
+      S.calendar.start.setDate(S.calendar.start.getDate() + 1);
+    }
+    S.calendar.end = null;
+    renderCalendar();
+  });
+  $('#cal-view-month').addEventListener('click', () => {
+    S.calendar.view = 'month';
+    $('#cal-view-group').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.id === 'cal-view-month'));
+    renderCalendar();
+  });
+  $('#cal-view-week').addEventListener('click', () => {
+    S.calendar.view = 'week';
+    $('#cal-view-group').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.id === 'cal-view-week'));
+    renderCalendar();
+  });
+  $('#cal-view-day').addEventListener('click', () => {
+    S.calendar.view = 'day';
+    $('#cal-view-group').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.id === 'cal-view-day'));
+    renderCalendar();
+  });
+  $('#cal-add').addEventListener('click', () => {
+    $('#cal-add-sheet').classList.remove('hidden');
+  });
+  $('#cal-add-sheet-close').addEventListener('click', () => {
+    $('#cal-add-sheet').classList.add('hidden');
+  });
+  $('#cal-add-sheet').addEventListener('click', (e) => {
+    if (e.target.id === 'cal-add-sheet') $('#cal-add-sheet').classList.add('hidden');
+  });
   $('#cl-save').addEventListener('click', async () => {
     if (!$('#cl-subject').value.trim()) { toast('Enter a subject', 'warn'); return; }
     try {
+      const now = new Date();
+      const tz = 'Asia/Tehran';
+      const pad = (n) => String(n).padStart(2, '0');
+      const hh = String($('#cl-time').value).split(':')[0] || '09';
+      const mm = String($('#cl-time').value).split(':')[1] || '00';
+      const date = now.toISOString().slice(0, 10);
+      const note = [];
+      if ($('#cl-repeat').value !== 'never') note.push($('#cl-repeat').value);
+      if ($('#cl-color').value !== 'cyan') note.push($('#cl-color').value);
+      if (note.length) note.push('repeat:' + note.join('|'));
+      if ($('#cl-end').value.trim()) note.push('ends:' + $('#cl-end').value.trim());
       await api('class.add', {
-        day: $('#cl-day').value, time: $('#cl-time').value.trim(),
-        subject: $('#cl-subject').value.trim(), room: $('#cl-room').value.trim()
+        day: $('#cl-day').value,
+        time: $('#cl-time').value.trim(),
+        subject: $('#cl-subject').value.trim(),
+        room: $('#cl-room').value.trim(),
+        notes: note.join(' ') || ''
       });
       toast('Class added');
-      $('#cl-subject').value = ''; $('#cl-time').value = ''; $('#cl-room').value = '';
+      $('#cl-subject').value = ''; $('#cl-time').value = ''; $('#cl-end').value = '';
+      $('#cl-room').value = ''; $('#cl-repeat').value = 'never'; $('#cl-color').value = 'cyan';
       await load();
+      renderCalendar();
     } catch (e) { toast(e.message, 'err'); }
+  });
+  $('#cl-add-cancel').addEventListener('click', () => {
+    $('#cl-add-sheet').classList.add('hidden');
+  });
+  $('#cl-add-cancel').addEventListener('click', () => {
+    $('#cl-add-sheet').classList.add('hidden');
   });
 
   // goals

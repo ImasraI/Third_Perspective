@@ -615,38 +615,118 @@
 
     <!-- ===================== MORE ===================== -->
     <section class="tab-panel space-y-6 hidden" id="panel-more">
+      <!-- ===================== CALENDAR ===================== -->
       <div class="glass-card rounded-3xl p-6 space-y-4">
-        <h2 class="text-base font-bold text-white flex items-center gap-2">
-          <i data-lucide="calendar" class="w-4 h-4 text-brand-cyan"></i> Weekly classes
-        </h2>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="label">Day</label>
-            <select id="cl-day" class="field">
-              <option>Saturday</option><option>Sunday</option><option>Monday</option>
-              <option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option>
-            </select>
+        <!-- header -->
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <div class="flex items-center gap-2">
+            <button id="cal-prev" class="btn btn-ghost">
+              <i data-lucide="chevron-left" class="w-4 h-4"></i>
+            </button>
+            <h2 id="cal-title" class="text-lg font-bold text-white"></h2>
+            <button id="cal-next" class="btn btn-ghost">
+              <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            </button>
           </div>
-          <div>
-            <label class="label">Time</label>
-            <input id="cl-time" class="field" placeholder="09:00" />
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="label">Subject</label>
-            <input id="cl-subject" class="field" placeholder="Physics" />
-          </div>
-          <div>
-            <label class="label">Room / link</label>
-            <input id="cl-room" class="field" placeholder="Hall 3" />
+          <div class="flex items-center gap-1 flex-wrap" id="cal-view-group">
+            <button id="cal-view-month" class="btn btn-ghost btn-sm px-2 py-1">Month</button>
+            <button id="cal-view-week" class="btn btn-ghost btn-sm px-2 py-1">Week</button>
+            <button id="cal-view-day" class="btn btn-ghost btn-sm px-2 py-1">Day</button>
           </div>
         </div>
-        <button id="cl-save" class="btn btn-primary w-full">
-          <i data-lucide="plus" class="w-4 h-4"></i> Add class
-        </button>
-        <div id="cl-list" class="space-y-2">
-          <div class="text-center py-6 text-sm text-slate-500">No classes yet</div>
+
+        <!-- calendar grid -->
+        <div id="cal-grid" class="hidden">
+          <div class="grid grid-cols-7 gap-px bg-slate-800/40 rounded-lg overflow-hidden">
+            <div class="bg-slate-700/40 text-center py-1.5 text-[10px] font-semibold text-slate-300 uppercase">Mon</div>
+            <div class="bg-slate-700/40 text-center py-1.5 text-[10px] font-semibold text-slate-300 uppercase">Tue</div>
+            <div class="bg-slate-700/40 text-center py-1.5 text-[10px] font-semibold text-slate-300 uppercase">Wed</div>
+            <div class="bg-slate-700/40 text-center py-1.5 text-[10px] font-semibold text-slate-300 uppercase">Thu</div>
+            <div class="bg-slate-700/40 text-center py-1.5 text-[10px] font-semibold text-slate-300 uppercase">Fri</div>
+            <div class="bg-slate-700/40 text-center py-1.5 text-[10px] font-semibold text-slate-300 uppercase">Sat</div>
+            <div class="bg-slate-700/40 text-center py-1.5 text-[10px] font-semibold text-slate-300 uppercase">Sun</div>
+            <div id="cal-grid-body" class="bg-slate-800/40 min-h-[22rem] p-1"></div>
+          </div>
+        </div>
+
+        <!-- week / day list -->
+        <div id="cal-list-view" class="hidden">
+          <div id="cal-list" class="space-y-2"></div>
+        </div>
+
+        <!-- day detail with time blocks -->
+        <div id="cal-day-view" class="hidden">
+          <div id="cal-day-body" class="space-y-2"></div>
+        </div>
+
+        <div class="flex items-center justify-between pt-2 border-t border-white/5">
+          <button id="cal-add" class="btn btn-primary">
+            <i data-lucide="plus" class="w-4 h-4"></i> Add class
+          </button>
+          <span id="cal-now" class="text-[11px] text-slate-500"></span>
+        </div>
+
+        <!-- add class sheet -->
+        <div id="cal-add-sheet" class="hidden space-y-4 rounded-3xl border border-white/10 bg-white/5 p-5">
+          <div class="flex items-center justify-between">
+            <h3 class="text-base font-bold text-white">New class</h3>
+            <button id="cal-add-sheet-close" class="btn btn-ghost btn-sm">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="label">Day</label>
+              <select id="cl-day" class="field">
+                <option>Saturday</option><option>Sunday</option><option>Monday</option>
+                <option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option>
+              </select>
+            </div>
+            <div>
+              <label class="label">Time</label>
+              <input id="cl-time" class="field" placeholder="09:00" />
+            </div>
+            <div>
+              <label class="label">End time</label>
+              <input id="cl-end" class="field" placeholder="10:00" />
+            </div>
+            <div>
+              <label class="label">Subject</label>
+              <input id="cl-subject" class="field" placeholder="Physics" />
+            </div>
+            <div>
+              <label class="label">Room / link</label>
+              <input id="cl-room" class="field" placeholder="Hall 3" />
+            </div>
+            <div>
+              <label class="label">Repeat</label>
+              <select id="cl-repeat" class="field">
+                <option value="never">Never</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+            <div>
+              <label class="label">Color</label>
+              <select id="cl-color" class="field">
+                <option value="cyan">Cyan</option>
+                <option value="purple">Purple</option>
+                <option value="green">Green</option>
+                <option value="orange">Orange</option>
+                <option value="pink">Pink</option>
+                <option value="amber">Amber</option>
+                <option value="red">Red</option>
+                <option value="slate">Slate</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button id="cl-save" class="btn btn-primary flex-1">
+              <i data-lucide="check" class="w-4 h-4"></i> Save class
+            </button>
+            <button id="cl-add-cancel" class="btn btn-ghost">Cancel</button>
+          </div>
         </div>
       </div>
 
