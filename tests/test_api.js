@@ -159,8 +159,8 @@ section('[1] setup + state');
   check('state returns ok', st.ok === true, JSON.stringify(st).slice(0, 200));
   check('all 7 sheets created', Object.keys(sb.sheets).length === 7, Object.keys(sb.sheets).join(','));
   check('goals are present', st.goals && st.goals.calories > 0);
-  check('muscle status covers all 12 groups',
-    Object.keys(st.workouts.muscleStatus).length === 12,
+  check('muscle status covers all 17 groups',
+    Object.keys(st.workouts.muscleStatus).length === 17,
     String(Object.keys(st.workouts.muscleStatus).length));
   check('nothing trained initially', !st.workouts.muscleStatus.chest.trained);
   check('unknown action is rejected', call(sb, { action: 'nope' }).ok === false);
@@ -280,7 +280,20 @@ section('[6] workouts + muscle recovery map');
   const sb = makeSandbox();
   const w1 = call(sb, { action: 'log.workout', name: 'Push', exercises: 'bench 80kg 4x10', durationMin: 60, muscles: ['chest', 'triceps', 'shoulders'] });
   check('workout saved', w1.ok === true, w1.error);
-  check('muscles echoed back', w1.muscles.length === 3, w1.muscles.join(','));
+  // The exercise text wins over the picked muscles: "bench 80kg 4x10" now
+  // credits chest, triceps AND both front + side delts (it used to credit
+  // exactly 3 muscles, which is why the old assertion passed by coincidence).
+  check('bench press credits the delt split', w1.muscles.length === 4, w1.muscles.join(','));
+
+  // With no exercise text to derive from, the picked muscles are stored as
+  // given — and the legacy "shoulders" alias expands to all three delt heads.
+  const w2 = call(sb, { action: 'log.workout', name: 'Legacy', muscles: ['shoulders'] });
+  check('legacy shoulders expands to three delt heads',
+    w2.ok === true && w2.muscles.length === 3 &&
+    w2.muscles.indexOf('front-delts') !== -1 &&
+    w2.muscles.indexOf('side-delts') !== -1 &&
+    w2.muscles.indexOf('rear-delts') !== -1,
+    w2.muscles.join(','));
 
   const st = call(sb, { action: 'state' });
   check('chest marked trained today', st.workouts.muscleStatus.chest.trained === true);

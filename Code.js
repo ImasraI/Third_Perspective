@@ -77,20 +77,43 @@ const SCHEMAS = [
 
 /** Canonical muscle groups. Order matters: it drives the body map legend. */
 const MUSCLES = [
-  'chest', 'back', 'shoulders', 'biceps', 'triceps', 'forearms',
-  'abs', 'obliques', 'glutes', 'quads', 'hamstrings', 'calves'
+  'neck', 'traps', 'front-delts', 'side-delts', 'rear-delts',
+  'chest', 'back', 'biceps', 'triceps', 'forearms',
+  'abs', 'obliques', 'lower-back',
+  'glutes', 'quads', 'hamstrings', 'calves'
 ];
+
+/** Old workout rows used one bucket per area; expand them for the new map. */
+const LEGACY_MUSCLES = {
+  shoulders: ['front-delts', 'side-delts', 'rear-delts']
+};
+
+/** Expand legacy muscle names, keeping order and dropping duplicates. */
+function expandMuscles(list) {
+  const out = [];
+  (list || []).forEach(function (m) {
+    const s = String(m).trim().toLowerCase();
+    const mapped = LEGACY_MUSCLES[s] || [s];
+    mapped.forEach(function (k) { if (out.indexOf(k) === -1) out.push(k); });
+  });
+  return out;
+}
 
 /** Exercise -> muscle keyword hints used by the local (non-AI) workout parser. */
 const MUSCLE_KEYWORDS = {
+  neck: ['neck curl', 'neck extension', 'neck harness', 'neck'],
+  traps: ['shrug', 'trap', 'upright row', 'high pull', 'power clean'],
+  'front-delts': ['front raise', 'incline bench', 'arnold'],
+  'side-delts': ['shoulder', 'overhead press', 'military press', 'lateral raise', 'arnold', 'delt', 'pike push'],
+  'rear-delts': ['rear delt', 'face pull', 'reverse fly'],
   chest: ['bench', 'chest', 'fly', 'pec', 'pushup', 'push-up', 'dip', 'cable fly', 'decline'],
-  back: ['lat', 'pull', 'row', 'pulldown', 'pull-up', 'pullup', 'chin', 'deadlift', 'back', 'shrug'],
-  shoulders: ['shoulder', 'overhead press', 'lateral raise', 'front raise', 'arnold', 'delt'],
+  back: ['lat', 'pull', 'row', 'pulldown', 'pull-up', 'pullup', 'chin', 'deadlift', 'back'],
   biceps: ['bicep', 'curl', 'hammer', 'preacher'],
   triceps: ['tricep', 'pushdown', 'push-down', 'skullcrusher', 'extension', 'dip'],
   forearms: ['forearm', 'wrist', 'grip', 'farmer'],
   abs: ['abs', 'crunch', 'sit-up', 'situp', 'plank', 'leg raise', 'toe touch', 'hollow', 'cable crunch'],
   obliques: ['oblique', 'side plank', 'woodchop', 'russian', 'twist'],
+  'lower-back': ['back extension', 'rack pull', 'good morning', 'superman', 'lower back', 'deadlift'],
   glutes: ['glute', 'glute bridge', 'hip thrust', 'squat', 'kettlebell swing', 'clamshell', 'lunge', 'split squat'],
   quads: ['squat', 'leg press', 'lunge', 'leg extension', 'quad', 'hack squat', 'bulgarian'],
   hamstrings: ['hamstring', 'rdl', 'romanian', 'leg curl', 'nordic', 'hip hinge', 'good morning'],
@@ -112,17 +135,17 @@ const MUSCLE_KEYWORDS = {
 
 const EXERCISE_ROWS = [
   // chest
-  ['push-up', 8.0, { chest: 1.0, triceps: 0.85, shoulders: 0.6, abs: 0.2 }],
-  ['pushup', 8.0, { chest: 1.0, triceps: 0.85, shoulders: 0.6, abs: 0.2 }],
-  ['bench press', 6.0, { chest: 1.0, triceps: 0.7, shoulders: 0.5 }],
-  ['incline bench press', 6.0, { chest: 0.9, shoulders: 0.7, triceps: 0.6 }],
-  ['decline bench press', 6.5, { chest: 1.0, triceps: 0.6, shoulders: 0.4 }],
-  ['dumbbell bench press', 6.0, { chest: 1.0, triceps: 0.7, shoulders: 0.5 }],
+  ['push-up', 8.0, { chest: 1.0, triceps: 0.85, 'front-delts': 0.45, 'side-delts': 0.15, abs: 0.2 }],
+  ['pushup', 8.0, { chest: 1.0, triceps: 0.85, 'front-delts': 0.45, 'side-delts': 0.15, abs: 0.2 }],
+  ['bench press', 6.0, { chest: 1.0, triceps: 0.7, 'front-delts': 0.4, 'side-delts': 0.1 }],
+  ['incline bench press', 6.0, { chest: 0.9, 'front-delts': 0.55, 'side-delts': 0.15, triceps: 0.6 }],
+  ['decline bench press', 6.5, { chest: 1.0, triceps: 0.6, 'front-delts': 0.3, 'side-delts': 0.1 }],
+  ['dumbbell bench press', 6.0, { chest: 1.0, triceps: 0.7, 'front-delts': 0.4, 'side-delts': 0.1 }],
   ['chest fly', 4.5, { chest: 1.0 }],
   ['cable fly', 4.5, { chest: 1.0 }],
   ['pec deck', 4.0, { chest: 1.0 }],
-  ['push-up variation', 7.0, { chest: 1.0, triceps: 0.8, shoulders: 0.6 }],
-  ['clap push-up', 9.0, { chest: 1.0, triceps: 0.85, shoulders: 0.7, abs: 0.2 }],
+  ['push-up variation', 7.0, { chest: 1.0, triceps: 0.8, 'front-delts': 0.45, 'side-delts': 0.15 }],
+  ['clap push-up', 9.0, { chest: 1.0, triceps: 0.85, 'front-delts': 0.5, 'side-delts': 0.2, abs: 0.2 }],
 
   // back
   ['pull-up', 8.0, { back: 1.0, biceps: 0.8, forearms: 0.5 }],
@@ -133,20 +156,27 @@ const EXERCISE_ROWS = [
   ['dumbbell row', 5.5, { back: 1.0, biceps: 0.7 }],
   ['seated cable row', 5.0, { back: 1.0, biceps: 0.6, forearms: 0.3 }],
   ['t-bar row', 6.0, { back: 1.0, forearms: 0.4 }],
-  ['shrug', 4.0, { back: 0.4, shoulders: 0.4 }],
+  ['shrug', 4.0, { traps: 0.8, back: 0.3, forearms: 0.3 }],
   ['deadlift', 8.0, { back: 0.8, hamstrings: 0.8, glutes: 0.7, quads: 0.4, forearms: 0.5, abs: 0.4 }],
   ['romanian deadlift', 6.5, { hamstrings: 1.0, glutes: 0.7, back: 0.5 }],
   ['superset pulldown', 5.0, { back: 1.0, biceps: 0.7 }],
 
-  // shoulders
-  ['overhead press', 6.0, { shoulders: 1.0, triceps: 0.6, abs: 0.3 }],
-  ['military press', 6.0, { shoulders: 1.0, triceps: 0.6 }],
-  ['lateral raise', 4.0, { shoulders: 1.0 }],
-  ['dumbbell lateral raise', 4.0, { shoulders: 1.0 }],
-  ['front raise', 4.0, { shoulders: 1.0 }],
-  ['arnold press', 5.0, { shoulders: 1.0, biceps: 0.4 }],
-  ['face pull', 4.0, { shoulders: 0.9, back: 0.4 }],
-  ['upright row', 5.0, { shoulders: 0.8, biceps: 0.5 }],
+  // shoulders (split into the three delt heads + traps)
+  ['overhead press', 6.0, { 'side-delts': 0.6, 'front-delts': 0.5, triceps: 0.6, abs: 0.3 }],
+  ['military press', 6.0, { 'side-delts': 0.6, 'front-delts': 0.5, triceps: 0.6 }],
+  ['lateral raise', 4.0, { 'side-delts': 1.0 }],
+  ['dumbbell lateral raise', 4.0, { 'side-delts': 1.0 }],
+  ['front raise', 4.0, { 'front-delts': 1.0 }],
+  ['arnold press', 5.0, { 'side-delts': 0.5, 'front-delts': 0.6, biceps: 0.4 }],
+  ['face pull', 4.0, { 'rear-delts': 0.8, traps: 0.3, back: 0.4 }],
+  ['upright row', 5.0, { traps: 0.5, 'side-delts': 0.5, biceps: 0.5 }],
+  ['rear delt fly', 4.0, { 'rear-delts': 1.0, back: 0.3 }],
+
+  // neck + lower back
+  ['neck curl', 3.0, { neck: 1.0 }],
+  ['neck extension', 3.0, { neck: 1.0, traps: 0.2 }],
+  ['back extension', 4.0, { 'lower-back': 1.0, glutes: 0.4, hamstrings: 0.3 }],
+  ['rack pull', 7.5, { 'lower-back': 0.7, back: 0.6, traps: 0.5, glutes: 0.5, hamstrings: 0.4, forearms: 0.4 }],
 
   // arms
   ['biceps curl', 4.0, { biceps: 1.0, forearms: 0.3 }],
@@ -156,18 +186,18 @@ const EXERCISE_ROWS = [
   ['triceps pushdown', 4.0, { triceps: 1.0 }],
   ['triceps extension', 4.0, { triceps: 1.0 }],
   ['skullcrusher', 4.5, { triceps: 1.0 }],
-  ['dip', 7.5, { triceps: 1.0, chest: 0.9, shoulders: 0.5 }],
+  ['dip', 7.5, { triceps: 1.0, chest: 0.9, 'front-delts': 0.4, 'side-delts': 0.1 }],
   ['bench dip', 7.0, { triceps: 1.0, chest: 0.7 }],
   ['close-grip bench press', 6.0, { triceps: 1.0, chest: 0.7 }],
   ['wrist curl', 3.0, { forearms: 1.0 }],
-  ['farmer carry', 5.0, { forearms: 1.0, back: 0.2, shoulders: 0.2, abs: 0.2 }],
+  ['farmer carry', 5.0, { forearms: 1.0, back: 0.2, 'side-delts': 0.2, abs: 0.2 }],
   ['grip squeeze', 3.0, { forearms: 1.0 }],
 
   // core
   ['crunch', 3.8, { abs: 1.0 }],
   ['sit-up', 4.0, { abs: 1.0 }],
   ['leg raise', 4.0, { abs: 1.0 }],
-  ['plank', 3.5, { abs: 1.0, obliques: 0.4, shoulders: 0.3 }],
+  ['plank', 3.5, { abs: 1.0, obliques: 0.4, 'side-delts': 0.3 }],
   ['cable crunch', 4.0, { abs: 1.0 }],
   ['hollow hold', 4.0, { abs: 1.0 }],
   ['russian twist', 4.0, { obliques: 1.0, abs: 0.5 }],
@@ -209,10 +239,10 @@ const EXERCISE_ROWS = [
   ['bike', 7.5, { quads: 0.8, glutes: 0.5, calves: 0.3 }],
   ['rowing', 7.0, { back: 0.7, quads: 0.4, glutes: 0.3, calves: 0.3 }],
   ['rowing machine', 7.0, { back: 0.7, quads: 0.4, glutes: 0.3, calves: 0.3 }],
-  ['swimming', 8.0, { back: 0.6, shoulders: 0.5, glutes: 0.4, quads: 0.4 }],
-  ['jump rope', 10.0, { calves: 0.8, quads: 0.5, shoulders: 0.4, forearms: 0.4 }],
-  ['burpee', 9.5, { quads: 0.7, chest: 0.7, shoulders: 0.6, abs: 0.6, calves: 0.4 }],
-  ['mountain climber', 8.0, { abs: 0.9, shoulders: 0.5, quads: 0.4 }],
+  ['swimming', 8.0, { back: 0.6, 'side-delts': 0.5, glutes: 0.4, quads: 0.4 }],
+  ['jump rope', 10.0, { calves: 0.8, quads: 0.5, 'side-delts': 0.4, forearms: 0.4 }],
+  ['burpee', 9.5, { quads: 0.7, chest: 0.7, 'side-delts': 0.4, 'front-delts': 0.2, abs: 0.6, calves: 0.4 }],
+  ['mountain climber', 8.0, { abs: 0.9, 'side-delts': 0.5, quads: 0.4 }],
   ['pull-up bar hang', 4.0, { forearms: 0.8, back: 0.5 }],
   ['stretching', 2.3, {}],
   ['mobility', 2.5, {}],
@@ -224,14 +254,14 @@ const EXERCISE_ROWS = [
   ['hammer strength row', 5.5, { back: 1.0, biceps: 0.6 }],
   ['pec deck machine', 4.0, { chest: 1.0 }],
   ['seated dip machine', 6.0, { triceps: 1.0, chest: 0.6 }],
-  ['assault bike', 9.0, { quads: 0.7, shoulders: 0.5, back: 0.4, calves: 0.4 }],
-  ['elliptical', 5.5, { quads: 0.4, glutes: 0.3, calves: 0.3, shoulders: 0.3 }],
+  ['assault bike', 9.0, { quads: 0.7, 'side-delts': 0.5, back: 0.4, calves: 0.4 }],
+  ['elliptical', 5.5, { quads: 0.4, glutes: 0.3, calves: 0.3, 'side-delts': 0.3 }],
   ['stair climber', 8.0, { quads: 0.8, glutes: 0.6, calves: 0.7 }],
   ['skier', 8.5, { quads: 0.7, calves: 0.5, hamstrings: 0.5, glutes: 0.5 }],
   ['rower', 7.0, { back: 0.7, quads: 0.4, glutes: 0.3, calves: 0.3 }],
-  ['kettlebell', 6.0, { quads: 0.4, glutes: 0.4, back: 0.4, shoulders: 0.4, biceps: 0.3 }],
-  ['dumbbell', 5.5, { back: 0.3, shoulders: 0.4, biceps: 0.3, triceps: 0.3 }],
-  ['barbell', 5.5, { back: 0.3, quads: 0.3, glutes: 0.3, shoulders: 0.3 }]
+  ['kettlebell', 6.0, { quads: 0.4, glutes: 0.4, back: 0.4, 'side-delts': 0.4, biceps: 0.3 }],
+  ['dumbbell', 5.5, { back: 0.3, 'side-delts': 0.4, biceps: 0.3, triceps: 0.3 }],
+  ['barbell', 5.5, { back: 0.3, quads: 0.3, glutes: 0.3, 'side-delts': 0.3 }]
 ];
 
 /**
@@ -359,8 +389,10 @@ const EXERCISE_ALIAS_MAP = (function () {
   return map;
 })();
 
-/** Muscles we can actually colour. Anything else in EXERCISES is folded away. */
-function isPaintableMuscle(name) { return MUSCLES.indexOf(name) >= 0; }
+/** Muscles we can actually colour. Legacy names still count as paintable. */
+function isPaintableMuscle(name) {
+  return MUSCLES.indexOf(name) >= 0 || Object.prototype.hasOwnProperty.call(LEGACY_MUSCLES, name);
+}
 
 /**
  * External weight makes an exercise harder. Without a barbell the same movement
@@ -960,7 +992,8 @@ function workoutState() {
 
   for (let i = rows.length - 1; i >= 1; i--) {
     const d = rowDateStr(rows[i][1]);
-    const muscles = splitList(rows[i][5]);
+    // Expand legacy buckets ("shoulders") so old rows still colour the map.
+    const muscles = expandMuscles(splitList(rows[i][5]));
     const storedLoad = loadCol !== -1 ? parseLoadCell(rows[i][loadCol]) : null;
     const rec = {
       rowId: i + 1,
@@ -978,7 +1011,12 @@ function workoutState() {
     if (load) {
       if (!byDay[d]) byDay[d] = {};
       Object.keys(load).forEach(function (m) {
-        byDay[d][m] = round1((byDay[d][m] || 0) + num(load[m]));
+        // Stored load JSON can carry legacy keys; spread them onto today's
+        // muscle names so history keeps contributing to effort.
+        expandMuscles([m]).forEach(function (k) {
+          if (MUSCLES.indexOf(k) === -1) return;
+          byDay[d][k] = round1((byDay[d][k] || 0) + num(load[m]));
+        });
       });
     }
 
@@ -2151,8 +2189,7 @@ function splitList(v) {
 
 function normaliseMuscles(list) {
   const out = [];
-  (list || []).forEach(function (m) {
-    const s = String(m).trim().toLowerCase();
+  expandMuscles(list).forEach(function (s) {
     if (MUSCLES.indexOf(s) !== -1 && out.indexOf(s) === -1) out.push(s);
   });
   return out;

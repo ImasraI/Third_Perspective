@@ -248,12 +248,19 @@ select.field option { background: #0f172a; color: #f1f5f9; }
   gap: 0.75rem;
   align-items: start;
 }
+.bm-base { opacity: 0.96; }
 .bm-figure { position: relative; }
 .bm-svg { width: 100%; height: auto; display: block; }
 
 .bm-region {
   cursor: pointer;
   transition: fill 0.4s ease, opacity 0.4s ease, filter 0.2s ease, stroke 0.3s ease;
+  /* Dark contour inherited by every child shape, so each muscle reads as a
+     separate carved slab instead of one flat silhouette. */
+  stroke: rgba(6, 12, 22, 0.8);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
 }
 .bm-region:hover { filter: brightness(1.5) drop-shadow(0 0 8px currentColor); }
 .bm-region:focus { outline: none; filter: brightness(1.5) drop-shadow(0 0 8px currentColor); }
