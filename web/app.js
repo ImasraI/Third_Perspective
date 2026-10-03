@@ -14,10 +14,14 @@ const S = {
   key: localStorage.getItem(LS.key) || '',
   data: null,
   parsed: [],          // foods staged for logging
+  photo: null,         // downscaled meal photo (data URL) staged for parse.image
   muscles: new Set(),  // muscle groups picked in the workout form
   charts: {},
   acIndex: -1,
-  acMatches: []
+  acMatches: [],
+  workouts: [],
+  workoutEditMuscles: new Set(),
+  workoutEditPanelOpen: false
 };
 
 const $ = (s) => document.querySelector(s);
@@ -96,6 +100,7 @@ function refreshSoon() { setTimeout(load, 120); }
 function render() {
   const d = S.data;
   if (!d) return;
+  S.workouts = d.workouts && d.workouts.recent ? d.workouts.recent.slice() : [];
   lucide.createIcons();
   renderRings(d);
   renderMetrics(d);
@@ -191,8 +196,15 @@ function renderFoodLog(d) {
         <div class="text-[11px] text-slate-500 font-mono">${esc(x.qty)} ${esc(x.unit)} · P ${x.protein} C ${x.carbs} F ${x.fat}</div>
       </div>
       <span class="font-mono text-sm font-bold text-cyan-400">${fmt(x.calories)}</span>
-      ${rowDelete('Nutrition', x.rowId)}
+      <div class="flex items-center gap-1">
+        <button class="icon-btn btn-sm food-edit-btn" data-edit-sheet="Nutrition" data-edit-row="${x.rowId}" title="Edit food">
+          <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+        </button>
+        ${rowDelete('Nutrition', x.rowId)}
+      </div>
     </div>`).join('');
+  // Give each parsed item a back-reference to its sheet row id.
+  S.parsed.forEach(function (i, idx) { if (!i._rowId) i._rowId = d.nutrition.recent[idx] && d.nutrition.recent[idx].rowId; });
 }
 
 function renderLibrary(d) {
@@ -286,8 +298,18 @@ function renderWorkoutLog(d) {
         <div class="flex flex-wrap gap-1 mt-1">${(w.muscles || []).map(m =>
           `<span class="badge badge-cache">${esc(m)}</span>`).join('')}</div>
       </div>
-      ${rowDelete('Workouts', w.rowId)}
+      <div class="flex items-center gap-1">
+        <button class="icon-btn btn-sm workout-edit-btn" data-edit-sheet="Workouts" data-edit-row="${w.rowId}" title="Edit workout">
+          <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+        </button>
+        <button class="icon-btn btn-sm" data-edit-workout="${w.rowId}" title="Edit workout">
+          <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+        </button>
+        ${rowDelete('Workouts', w.rowId)}
+      </div>
     </div>`).join('');
+  // Give each workout object a back-reference to its sheet row id.
+  d.workouts.recent.forEach(function (w, idx) { if (!w._rowId) w._rowId = w.rowId; });
 }
 
 function renderExpenses(d) {
@@ -726,6 +748,7 @@ function findCached(text) {
 }
 
 async function parseFood() {
+  if (S.photo) { await parsePhoto(); return; }
   const text = $('#food-input').value.trim();
   if (!text) { toast('Type a meal first', 'warn'); return; }
 
@@ -780,6 +803,83 @@ async function parseFood() {
   }
 }
 
+/* ============================================================================
+   PHOTO -> NUTRITION (Gemini vision)
+   ----------------------------------------------------------------------------
+   The backend already exposes parse.image (visionAction). The photo is
+   downscaled here so it stays under the server's 2.1 MB cap and the request
+   stays fast; anything typed in the food box rides along as a hint.
+   ========================================================================== */
+
+function clearPhoto() {
+  S.photo = null;
+  const box = $('#photo-preview');
+  if (box) box.classList.add('hidden');
+  const input = $('#food-photo');
+  if (input) input.value = '';
+}
+
+/** Shrink to max 1280px edge and re-encode as JPEG so the upload stays small. */
+function preparePhoto(dataUrl, done) {
+  const img = new Image();
+  img.onload = function () {
+    const maxEdge = 1280;
+    const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    let out = c.toDataURL('image/jpeg', 0.75);
+    // ~4 base64 chars per 3 bytes; stay comfortably under the server cap.
+    if (out.length * 0.75 > 1900000) out = c.toDataURL('image/jpeg', 0.55);
+    done(out);
+  };
+  img.onerror = function () { toast('Could not read that image', 'err'); };
+  img.src = dataUrl;
+}
+
+function onPhotoPicked(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function () {
+    preparePhoto(reader.result, function (b64) {
+      S.photo = b64;
+      $('#photo-img').src = b64;
+      $('#photo-size').textContent =
+        Math.round(b64.length * 0.75 / 1024) + ' KB · auto-downscaled';
+      $('#photo-preview').classList.remove('hidden');
+      lucide.createIcons();
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+async function parsePhoto() {
+  const hint = $('#food-input').value.trim();
+  $('#ai-status').classList.remove('hidden');
+  $('#food-parse').disabled = true;
+  try {
+    const r = await api('parse.image', { image: S.photo, hint: hint });
+    if (r.recognised === false || !r.foods || !r.foods.length) {
+      toast(r.note || 'I could not tell what is in this photo. Try a closer, well-lit shot.', 'warn');
+      return;
+    }
+    S.parsed = r.foods.map(fromApi);
+    renderParsed();
+    toast(r.rough
+      ? 'Rough estimate — check the numbers before logging'
+      : 'Recognised ' + r.foods.length + ' item(s) from your photo',
+      r.rough ? 'warn' : 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    $('#ai-status').classList.add('hidden');
+    $('#food-parse').disabled = false;
+  }
+}
+
 async function logParsed() {
   if (!S.parsed.length) return;
   const btn = $('#food-add');
@@ -800,10 +900,140 @@ async function logParsed() {
     toast('Logged ' + S.parsed.length + ' item(s)');
     S.parsed = [];
     $('#food-input').value = '';
+    clearPhoto();
     renderParsed();
     await load();
   } catch (e) {
     toast(e.message, 'err');
+    btn.disabled = false;
+  }
+}
+
+/* ============================================================================
+   EDIT FOOD / WORKOUT
+   ----------------------------------------------------------------------------
+   Tracked rows are identified by their sheet row id. The client stores the
+   staging objects in module state (S.foodEdit / S.workoutEdit), keeps the
+   edit form in sync with the database on every change, and saves whichever
+/* ============================================================================
+   EDIT FOOD / WORKOUT
+   ----------------------------------------------------------------------------
+   Tracked rows are identified by their sheet row id. The client stores the
+   staging objects in global state (S.foodEdit / S.workoutEdit), keeps the
+   edit form in sync with the database on every change, and saves whichever
+   fields are actually filled in — everything else is left untouched.
+   ========================================================================== */
+
+function openFoodEdit() {
+  const panel = $('#food-edit-panel');
+  const ed = S.foodEdit;
+  if (!ed) return;
+  panel.classList.remove('hidden');
+  $('#food-edit-food').value = ed.orig.food;
+  $('#food-edit-qty').value = ed.orig.qty;
+  $('#food-edit-unit').value = ed.orig.unit;
+  $('#food-edit-cal').value = ed.orig.calories;
+  $('#food-edit-pro').value = ed.orig.protein;
+  $('#food-edit-carbs').value = ed.orig.carbs;
+  $('#food-edit-fat').value = ed.orig.fat;
+  $('#food-edit-save').onclick = () => saveFoodEdit();
+  $('#food-edit-clear').onclick = () => { S.foodEdit = null; panel.classList.add('hidden'); };
+  $('#food-edit-cancel').onclick = () => { S.foodEdit = null; panel.classList.add('hidden'); };
+}
+
+function closeFoodEdit() {
+  S.foodEdit = null;
+  $('#food-edit-panel').classList.add('hidden');
+}
+
+async function saveFoodEdit() {
+  const ed = S.foodEdit;
+  if (!ed) return;
+  const btn = $('#food-edit-save');
+  btn.disabled = true;
+  try {
+    const body = { rowId: ed.rowId };
+    const food = $('#food-edit-food').value.trim();
+    if (food) body.food = food;
+    const qty = parseFloat($('#food-edit-qty').value);
+    if (isFinite(qty)) body.qty = qty;
+    const unit = $('#food-edit-unit').value.trim();
+    if (unit) body.unit = unit;
+    const cal = parseFloat($('#food-edit-cal').value);
+    if (isFinite(cal)) body.calories = cal;
+    const pro = parseFloat($('#food-edit-pro').value);
+    if (isFinite(pro)) body.protein = pro;
+    const carbs = parseFloat($('#food-edit-carbs').value);
+    if (isFinite(carbs)) body.carbs = carbs;
+    const fat = parseFloat($('#food-edit-fat').value);
+    if (isFinite(fat)) body.fat = fat;
+    if (!Object.keys(body).length > 1) { toast('Nothing to change', 'warn'); return; }
+    await api('edit.food', body);
+    // Sync the whole sheet back into state so the rings update.
+    await load();
+    closeFoodEdit();
+    toast('Food updated');
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function openWorkoutEdit() {
+  const panel = $('#workout-edit-panel');
+  const ed = S.workoutEdit;
+  if (!ed) return;
+  S.workoutEditPanelOpen = true;
+  $('#workout-edit-muscles').classList.remove('hidden');
+  panel.classList.remove('hidden');
+  $('#workout-edit-name').value = ed.orig.name;
+  $('#workout-edit-dur').value = ed.orig.durationMin;
+  $('#workout-edit-ex').value = ed.orig.exercises;
+  // Rebuild chips from the DB muscles so the edit panel mirrors what is saved.
+  $('#workout-edit-muscles').innerHTML = (ed.orig.muscles || []).map(m =>
+    `<span class="chip" data-mus="${m}">${MUSCLE_EMOJI[m] || ''} ${MUSCLE_LABELS[m]}</span>`).join('');
+  // Seed the toggle set from the loaded chips, respecting `on` class.
+  $('#workout-edit-muscles').querySelectorAll('[data-mus]').forEach(function (chip) {
+    if (chip.classList.contains('on')) S.workoutEditMuscles.add(chip.dataset.mus);
+  });
+  $('#workout-edit-save').onclick = () => saveWorkoutEdit();
+  $('#workout-edit-clear').onclick = () => { closeWorkoutEdit(); };
+  $('#workout-edit-cancel').onclick = () => { closeWorkoutEdit(); };
+}
+
+function closeWorkoutEdit() {
+  S.workoutEditPanelOpen = false;
+  S.workoutEdit = null;
+  $('#workout-edit-panel').classList.add('hidden');
+  $('#workout-edit-muscles').classList.add('hidden');
+}
+
+async function saveWorkoutEdit() {
+  const ed = S.workoutEdit;
+  if (!ed) return;
+  const btn = $('#workout-edit-save');
+  btn.disabled = true;
+  try {
+    const body = { rowId: ed.rowId };
+    const name = $('#workout-edit-name').value.trim();
+    if (name) body.name = name;
+    const dur = parseInt($('#workout-edit-dur').value, 10);
+    if (isFinite(dur)) body.durationMin = dur;
+    const ex = $('#workout-edit-ex').value.trim();
+    if (ex) body.exercises = ex;
+    // Muscle groups: chips are toggled client-side into S.workoutEditMuscles
+    const muscles = Array.from(S.workoutEditMuscles || new Set());
+    if (muscles.length) body.muscles = muscles;
+    if (!Object.keys(body).length > 1) { toast('Nothing to change', 'warn'); return; }
+    await api('edit.workout', body);
+    // Sync the whole sheet back into state so the rings + muscle map update.
+    await load();
+    closeWorkoutEdit();
+    toast('Workout updated');
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
     btn.disabled = false;
   }
 }
@@ -857,6 +1087,20 @@ function buildMuscleChips() {
 function toggleMuscle(m) {
   if (S.muscles.has(m)) S.muscles.delete(m); else S.muscles.add(m);
   document.querySelector(`[data-mus="${m}"]`).classList.toggle('on', S.muscles.has(m));
+}
+
+/** Move a muscle toggle between the workout log form and an edit panel. */
+function swapMuscleSet(sourceEl, targetEl) {
+  const chips = sourceEl.querySelectorAll('[data-mus]');
+  chips.forEach(function (chip) {
+    const m = chip.dataset.mus;
+    const on = chip.classList.contains('on');
+    const targetChip = targetEl.querySelector(`[data-mus="${m}"]`);
+    if (targetChip) {
+      targetChip.classList.toggle('on', on);
+      if (on) { S.workoutEditMuscles.add(m); } else { S.workoutEditMuscles.delete(m); }
+    }
+  });
 }
 
 async function autoDetectWorkout() {
@@ -948,6 +1192,8 @@ function bind() {
   // food
   $('#food-parse').addEventListener('click', parseFood);
   $('#food-add').addEventListener('click', logParsed);
+  $('#food-photo').addEventListener('change', onPhotoPicked);
+  $('#photo-clear').addEventListener('click', clearPhoto);
   $('#food-input').addEventListener('input', (e) => {
     const q = e.target.value;
     if (q.length < 1) { hideAc('#food-ac'); return; }
@@ -1015,7 +1261,11 @@ function bind() {
   buildMuscleChips();
   $('#wk-muscles').addEventListener('click', (e) => {
     const c = e.target.closest('[data-mus]');
-    if (c) toggleMuscle(c.dataset.mus);
+    if (c) {
+      toggleMuscle(c.dataset.mus);
+      // If an edit panel is open, mirror the toggle into it too.
+      if (S.workoutEditPanelOpen) swapMuscleSet($('#wk-muscles'), $('#workout-edit-muscles'));
+    }
   });
   $('#wk-save').addEventListener('click', saveWorkout);
   let wkTimer;
@@ -1102,7 +1352,7 @@ function bind() {
     } catch (e) { toast(e.message, 'err'); }
   });
 
-  // generic delegated actions: ticks + deletes + library pick
+  // generic delegated actions: ticks + deletes + library pick + row edits
   document.addEventListener('click', async (e) => {
     const tick = e.target.closest('[data-task]');
     if (tick) {
@@ -1127,6 +1377,34 @@ function bind() {
       renderParsed();
       switchTab('food');
       toast(f.name + ' ready to log', 'ok');
+    }
+    const edit = e.target.closest('[data-edit-sheet]');
+    if (edit) {
+      const sheet = edit.dataset.editSheet;
+      const row = +edit.dataset.editRow;
+      let item = null;
+      if (sheet === 'Nutrition') {
+        item = S.parsed.find(i => i && i._rowId === row);
+      } else {
+        item = S.workoutEdit && S.workoutEdit.find(w => (w._rowId || 0) === row);
+      }
+      if (!item) { toast('Could not locate this entry', 'err'); return; }
+      if (sheet === 'Nutrition') {
+        S.foodEdit = { rowId: row, orig: item };
+        openFoodEdit();
+      } else {
+        S.workoutEdit = { rowId: row, orig: item };
+        openWorkoutEdit();
+      }
+      await load();
+    }
+    const editWork = e.target.closest('[data-edit-workout]');
+    if (editWork) {
+      const row = +editWork.dataset.editWorkout;
+      let item = S.workouts && S.workouts.recent.find(w => (w._rowId || 0) === row);
+      if (!item) { toast('Could not locate this workout', 'err'); return; }
+      S.workoutEdit = { rowId: row, orig: item };
+      openWorkoutEdit();
     }
   });
 

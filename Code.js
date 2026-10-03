@@ -841,12 +841,14 @@ const ROUTES = {
   'log.expense': function (r) { return logExpense(r); },
   'log.workout': function (r) { return logWorkout(r); },
   'log.study': function (r) { return logStudy(r); },
+  'edit.food': function (r) { return editFood(r); },
   'task.add': function (r) { return addTask(r); },
   'task.toggle': function (r) { return toggleTask(r); },
   'task.delete': function (r) { return deleteRow(SHEETS.TASKS, r.rowId); },
   'class.add': function (r) { return addClass(r); },
   'class.delete': function (r) { return deleteRow(SHEETS.CLASSES, r.rowId); },
   'entry.delete': function (r) { return deleteEntry(r); },
+  'edit.workout': function (r) { return editWorkout(r); },
   'goals.save': function (r) { return saveGoals(r); }
 };
 
@@ -2065,6 +2067,34 @@ function logStudy(req) {
   return { ok: true, rowId: rowId, todayMinutes: studyState().todayMinutes };
 }
 
+/**
+ * Edit ONE logged workout row by its sheet row id.
+ * Accepts { rowId, name, exercises, durationMin, muscles[] } — all fields optional.
+ */
+function editWorkout(req) {
+  const row = num(req.rowId);
+  const sheet = getSheet(SHEETS.WORKOUTS);
+  if (row < 2 || row > sheet.getLastRow()) return { ok: false, error: 'Bad rowId' };
+
+  const updates = [];
+  if (String(req.name || '').trim() !== '') updates.push([3, String(req.name).trim() || 'Workout']);
+  if (String(req.exercises || '').trim() !== '') updates.push([4, String(req.exercises).trim()]);
+  if (typeof req.durationMin === 'number' && isFinite(req.durationMin)) updates.push([5, req.durationMin]);
+  if (Array.isArray(req.muscles) && req.muscles.length) {
+    const list = req.muscles.map(function (m) { return String(m).trim().toLowerCase(); }).filter(Boolean).join(',');
+    if (list) updates.push([6, list]);
+  }
+  if (!updates.length) return { ok: false, error: 'Nothing to edit' };
+
+  // Write each edited column independently so we never clobber other columns.
+  updates.forEach(function (u) {
+    sheet.getRange(row, u[0], 1, 1).setValue(u[1]);
+  });
+  SpreadsheetApp.flush();
+
+  return { ok: true, rowId: row, state: workoutState() };
+}
+
 function addTask(req) {
   if (!req.task) return { ok: false, error: 'Task text required' };
   const rowId = append(SHEETS.TASKS, [todayStr(), req.task, req.due || '', 'Pending', '', req.priority || 'Normal']);
@@ -2283,6 +2313,37 @@ function logFood(req) {
   SpreadsheetApp.flush();
 
   return { ok: true, logged: items.length, items: items, today: nutritionState().today };
+}
+
+/**
+ * Edit ONE logged food row by its sheet row id.
+ * Accepts the same shape the client stores: { rowId, food, qty, unit, calories, protein, carbs, fat }.
+ */
+function editFood(req) {
+  const row = num(req.rowId);
+  const sheet = getSheet(SHEETS.NUTRITION);
+  if (row < 2 || row > sheet.getLastRow()) return { ok: false, error: 'Bad rowId' };
+  const food = String(req.food || '').trim();
+  if (!food) return { ok: false, error: 'Food name required' };
+
+  const date = todayStr();
+  const updates = [];
+  if (String(req.food) !== '') updates.push([3, food]);
+  if (typeof req.qty === 'number' && isFinite(req.qty)) updates.push([4, req.qty]);
+  if (req.unit) updates.push([5, String(req.unit).trim() || 'serving']);
+  if (typeof req.calories === 'number' && isFinite(req.calories)) updates.push([6, round1(req.calories)]);
+  if (typeof req.protein === 'number' && isFinite(req.protein)) updates.push([7, round1(req.protein)]);
+  if (typeof req.carbs === 'number' && isFinite(req.carbs)) updates.push([8, round1(req.carbs)]);
+  if (typeof req.fat === 'number' && isFinite(req.fat)) updates.push([9, round1(req.fat)]);
+  if (!updates.length) return { ok: false, error: 'Nothing to edit' };
+
+  // Write each edited column independently so we never clobber other columns.
+  updates.forEach(function (u) {
+    sheet.getRange(row, u[0], 1, 1).setValue(u[1]);
+  });
+  SpreadsheetApp.flush();
+
+  return { ok: true, rowId: row, today: nutritionState().today };
 }
 
 /**

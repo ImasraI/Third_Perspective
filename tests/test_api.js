@@ -408,6 +408,38 @@ section('[11] goals persist to script properties');
 }
 
 // ===========================================================================
+section('[11b] edit food + edit workout');
+{
+  const sb = makeSandbox();
+  // Seed a nutrition row (rowId 2) exactly like log.food does.
+  const today = sb.Utilities.formatDate(new Date(), 'Asia/Tehran', 'yyyy-MM-dd');
+  const row = [new Date(), today, 'egg', 2, 'egg', 144, 12.6, 0.7, 9.5, 'AI'];
+  sb.sheets.Nutrition.appendRow(row);
+  const editFood = call(sb, { action: 'edit.food', rowId: 2, food: 'egg', qty: 3, unit: 'egg', calories: 216, protein: 18.9, carbs: 1.05, fat: 14.25 });
+  check('edit.food succeeds', editFood.ok === true, editFood.error);
+  check('food totals updated after edit', Math.abs(editFood.today.calories - 216) < 0.01, String(editFood.today.calories));
+  // Empty name is rejected (required).
+  const keep = call(sb, { action: 'edit.food', rowId: 2, food: '' });
+  check('edit.food rejects empty name', keep.ok === false, keep.error);
+  check('food name unchanged after rejected edit', sb.sheets.Nutrition.rows[1][2] === 'egg', String(sb.sheets.Nutrition.rows[1][2]));
+
+  // Seed a workout row (rowId 2).
+  const wdate = sb.Utilities.formatDate(new Date(), 'Asia/Tehran', 'yyyy-MM-dd');
+  const wrow = [new Date(), wdate, 'Push', 'bench 80kg 4x10', 60, 'chest,triceps,front-delts,side-delts', '', '{}'];
+  sb.sheets.Workouts.appendRow(wrow);
+  const editWork = call(sb, { action: 'edit.workout', rowId: 2, name: 'Push Day', durationMin: 70, exercises: 'bench 80kg 4x10 and overhead press', muscles: ['chest', 'triceps', 'shoulders'] });
+  check('edit.workout succeeds', editWork.ok === true, editWork.error);
+  check('workout renamed', editWork.ok === true && sb.sheets.Workouts.rows[1][2] === 'Push Day', String(sb.sheets.Workouts.rows[1][2]));
+  check('duration updated', editWork.ok === true && sb.sheets.Workouts.rows[1][4] === 70, String(sb.sheets.Workouts.rows[1][4]));
+  check('muscles stored', editWork.ok === true && sb.sheets.Workouts.rows[1][5] === 'chest,triceps,shoulders', String(sb.sheets.Workouts.rows[1][5]));
+  // Bad rowId rejected.
+  check('edit.food rejects bad rowId', call(sb, { action: 'edit.food', rowId: 9999 }).ok === false);
+  check('edit.workout rejects bad rowId', call(sb, { action: 'edit.workout', rowId: 9999 }).ok === false);
+  // Nothing to edit rejected.
+  check('edit.food rejects nothing to edit', call(sb, { action: 'edit.food', rowId: 2 }).ok === false);
+}
+
+// ===========================================================================
 section('[12] app key auth');
 {
   const open = makeSandbox({ props: {} });
