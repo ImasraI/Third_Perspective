@@ -3,6 +3,7 @@
    ========================================================================== */
 
 :root {
+  --logo-font: 'Inter', 'Outfit', 'system-ui', sans-serif;
   --color-cyan: #22d3ee;
   --color-purple: #a855f7;
   --color-green: #22c55e;
@@ -240,95 +241,152 @@ select.field option { background: #0f172a; color: #f1f5f9; }
 .badge-manual  { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); }
 
 /* ============================================================================
-   Muscle body map - muscular anime style
+   Muscle body map - charcoal silhouette
    ========================================================================== */
 .bm-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-  align-items: start;
+  gap: 0.85rem;
+  align-items: center;
 }
-.bm-base { opacity: 0.96; }
-.bm-figure { position: relative; }
+.bm-base { opacity: 0.98; }
+.bm-figure { position: relative; display: flex; flex-direction: column; align-items: center; }
 .bm-svg { width: 100%; height: auto; display: block; }
 
+/* ---- panel backdrop: soft radial smudges over charcoal ---- */
+.bm-panel {
+  position: relative;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 38%, rgba(38, 50, 74, 0.9) 0%, rgba(20, 28, 42, 0.98) 70%);
+  border: 1px solid rgba(207, 216, 224, 0.12);
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border-radius: 1.25rem;
+  padding: 1.1rem 1.2rem 1.35rem;
+}
+.bm-panel::before,
+.bm-panel::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.bm-panel::before {
+  width: 340px; height: 340px;
+  background: radial-gradient(circle, rgba(207, 216, 224, 0.07) 0%, transparent 70%);
+  top: -80px; left: -90px;
+}
+.bm-panel::after {
+  width: 260px; height: 260px;
+  background: radial-gradient(circle, rgba(207, 216, 224, 0.05) 0%, transparent 70%);
+  bottom: -60px; right: -70px;
+}
+
+/* ---- surfaces under each figure ---- */
+.bm-scape {
+  width: 100%;
+  padding: 0.5rem 0 0.2rem;
+  border-radius: 0.85rem;
+  background: rgba(20, 28, 42, 0.55);
+  border: 1px solid rgba(207, 216, 224, 0.08);
+  backdrop-filter: blur(6px);
+}
+
+/* ---- silhouette figures ---- */
+.bm-figure svg {
+  overflow: visible;
+}
 .bm-region {
   cursor: pointer;
-  transition: fill 0.4s ease, opacity 0.4s ease, filter 0.2s ease, stroke 0.3s ease;
-  /* Dark contour inherited by every child shape, so each muscle reads as a
-     separate carved slab instead of one flat silhouette. */
-  stroke: rgba(6, 12, 22, 0.8);
-  stroke-width: 1.2;
+  transition: fill 0.35s ease, stroke 0.35s ease, filter 0.2s ease;
+  fill: #26324a;
+  stroke: #cfd8e0;
+  stroke-width: 1.4;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
-.bm-region:hover { filter: brightness(1.5) drop-shadow(0 0 8px currentColor); }
-.bm-region:focus { outline: none; filter: brightness(1.5) drop-shadow(0 0 8px currentColor); }
+.bm-region:hover {
+  fill: #2a3650;
+  filter: brightness(1.08) drop-shadow(0 0 6px rgba(207, 216, 224, 0.25));
+}
+.bm-region:focus {
+  outline: none;
+  fill: #2a3650;
+}
+/* Unhighlighted muscle: flat charcoal silhouette with a light contour. */
+.bm-region-flat { fill: #26324a; stroke: #cfd8e0; }
+/* Highlighted muscle group: bright red. */
+.bm-region-hl { fill: #ff3b30; stroke: #ff3b30; }
+.bm-region-hl:hover { fill: #ff5547; }
 
-/* Tone classes applied to muscle group <g> elements */
-.bm-fresh   { color: var(--bm-fresh); }
-.bm-recent  { color: var(--bm-recent); }
-.bm-due     { color: var(--bm-due); }
-.bm-overdue { color: var(--bm-overdue); }
-.bm-cold    { color: var(--bm-cold); }
-.bm-none    { color: var(--bm-none); }
+/* ---- logo: stacked dumbbell + wordmark ---- */
+.bm-logo {
+  display: block;
+  width: 100%;
+  max-width: 190px;
+  margin: 0.15rem auto 0.1rem;
+  overflow: visible;
+}
+.bm-logo .bm-logo-row { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.bm-logo .bm-logo-row + .bm-logo-row { margin-top: 0; }
+.bm-logo-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: 2px;
+  line-height: 1.05;
+}
+.bm-logo-wordmark {
+  font-family: var(--logo-font, Inter, Outfit, system-ui, sans-serif);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #e8ecf2;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.bm-logo-tagline {
+  font-family: var(--logo-font, Inter, Outfit, system-ui, sans-serif);
+  font-size: 0.46rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: #9aa8bb;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
 
-/* Effort scale — ONE colour language for the body map: colour = how hard the
-   muscle has been trained (backend level 0-4, intensity vs. your own weekly
-   target). These classes did not exist before, so trained muscles fell back
-   to inherited text colour and the map showed no effort at all. */
-.bm-effort-1 { color: #38bdf8; }   /* light        */
-.bm-effort-2 { color: #22c55e; }   /* solid        */
-.bm-effort-3 { color: #f59e0b; }   /* hard         */
-.bm-effort-4 { color: #f97316; }   /* very hard    */
-.bm-effort-5 { color: #ef4444; }   /* maxed out    */
-
-/* Effort legend rendered under the figures by bodymap.js */
-.bm-effort-legend { margin-top: 0.85rem; text-align: center; }
+/* ---- effort legend ---- */
+.bm-effort-legend {
+  margin-top: 0.85rem;
+  text-align: center;
+}
 .bm-legend-title {
-  font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
-  font-weight: 700; color: #64748b; margin-bottom: 0.45rem;
+  font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase;
+  font-weight: 700; color: #64748b; margin-bottom: 0.4rem;
 }
 .bm-effort-levels { display: flex; flex-wrap: wrap; gap: 0.45rem 0.9rem; justify-content: center; }
-.bm-effort-level { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.68rem; font-weight: 600; color: #cbd5e1; }
+.bm-effort-level { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.65rem; font-weight: 600; color: #cbd5e1; }
 .bm-effort-dot {
   width: 10px; height: 10px; border-radius: 9999px;
-  background: currentColor; box-shadow: 0 0 6px currentColor;
+  background: #ff3b30; box-shadow: 0 0 8px rgba(255, 59, 48, 0.55);
 }
+.bm-effort-dot.bm-none { background: #64748b; box-shadow: 0 0 6px rgba(100, 116, 139, 0.5); }
 .bm-effort-label { color: #94a3b8; }
 
-.bm-region.bm-out { opacity: 0.4; filter: saturate(0.5); }
-.bm-region.bm-out:hover { opacity: 1; }
+/* ---- window note ---- */
+.bm-window-note { text-align: center; font-size: 0.68rem; color: #64748b; margin-top: 0.3rem; }
 
-.bm-legend { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center; }
-.bm-key {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.28rem 0.6rem;
-  border-radius: 9999px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #cbd5e1;
-  transition: all 0.15s ease;
-  cursor: pointer;
-}
-.bm-key:hover { border-color: rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.08); }
-.bm-key .dot { width: 8px; height: 8px; border-radius: 9999px; background: currentColor; }
-.bm-key .ago { font-family: ui-monospace, monospace; font-size: 0.64rem; color: #64748b; }
-
+/* ---- hover tooltip ---- */
 .bm-tip {
   position: absolute;
   z-index: 50;
   pointer-events: none;
-  background: rgba(2, 6, 23, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #e2e8f0;
-  font-size: 0.7rem;
+  background: rgba(12, 18, 30, 0.96);
+  border: 1px solid rgba(207, 216, 224, 0.18);
+  color: #e8ecf2;
+  font-size: 0.66rem;
   font-weight: 600;
-  padding: 0.3rem 0.6rem;
+  padding: 0.28rem 0.55rem;
   border-radius: 0.5rem;
   white-space: nowrap;
   transform: translate(-50%, -130%);
