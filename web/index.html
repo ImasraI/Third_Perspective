@@ -56,15 +56,14 @@
 
   <div class="vs-shell">
 
-    <!-- ===================== TITLE BAR ===================== -->
-    <div class="vs-titlebar">
-      <div class="vs-menu">
-        <span>File</span><span>Edit</span><span>Selection</span><span>View</span><span>Go</span><span>Run</span><span>Terminal</span><span>Help</span>
-      </div>
-      <div class="vs-nav-arrows"><i data-lucide="chevron-left"></i><i data-lucide="chevron-right"></i></div>
-      <div class="vs-command"><i data-lucide="search"></i><h1>ThirdPerspective — boom-merged</h1></div>
-      <div class="vs-winbtns"><span>–</span><span>▢</span><span class="vs-win-close">✕</span></div>
-    </div>
+    <!-- ===================== APP HEADER ===================== -->
+    <header class="vs-appbar">
+      <span class="vs-appbar-conn"><span id="live-dot"></span><span id="live-indicator">Not connected</span></span>
+      <span class="vs-appbar-title">ThirdPerspective</span>
+      <span class="vs-appbar-spacer"></span>
+      <span id="current-date">—</span>
+      <button id="sound-toggle" title="Sounds"><i data-lucide="volume-2"></i></button>
+    </header>
 
     <div class="vs-workbench">
 
@@ -83,39 +82,8 @@
         </div>
       </div>
 
-      <!-- ===================== SIDEBAR / EXPLORER ===================== -->
-      <aside class="vs-sidebar">
-        <div class="vs-side-head"><span>EXPLORER</span><i data-lucide="ellipsis"></i></div>
-        <div class="vs-side-root"><i data-lucide="chevron-down"></i>THIRDPERSPECTIVE</div>
-        <div class="vs-side-folder"><span class="ind"></span><i data-lucide="chevron-down"></i>app</div>
-        <nav>
-          <button class="vs-tree-item active" data-tab="today"><i data-lucide="file-code"></i>today<span class="py">.py</span></button>
-          <button class="vs-tree-item" data-tab="food"><i data-lucide="file-code"></i>food<span class="py">.py</span></button>
-          <button class="vs-tree-item" data-tab="body"><i data-lucide="file-code"></i>body<span class="py">.py</span></button>
-          <button class="vs-tree-item" data-tab="money"><i data-lucide="file-code"></i>money<span class="py">.py</span></button>
-          <button class="vs-tree-item" data-tab="study"><i data-lucide="file-code"></i>study<span class="py">.py</span></button>
-          <button class="vs-tree-item" data-tab="tasks"><i data-lucide="file-code"></i>tasks<span class="py">.py</span></button>
-          <button class="vs-tree-item" data-tab="more"><i data-lucide="file-code"></i>more<span class="py">.py</span></button>
-        </nav>
-        <div class="vs-side-foot"><i data-lucide="chevron-right"></i>Outline</div>
-        <div class="vs-side-foot"><i data-lucide="chevron-right"></i>Timeline</div>
-      </aside>
-
       <!-- ===================== EDITOR ===================== -->
       <main class="vs-editor">
-        <div class="vs-tabs" id="vs-tabs">
-          <button class="vs-tab active" data-tab="today"><i data-lucide="file-code"></i>today.py<span class="vs-tab-x">×</span></button>
-          <button class="vs-tab" data-tab="food"><i data-lucide="file-code"></i>food.py<span class="vs-tab-x">×</span></button>
-          <button class="vs-tab" data-tab="body"><i data-lucide="file-code"></i>body.py<span class="vs-tab-x">×</span></button>
-          <button class="vs-tab" data-tab="money"><i data-lucide="file-code"></i>money.py<span class="vs-tab-x">×</span></button>
-          <button class="vs-tab" data-tab="study"><i data-lucide="file-code"></i>study.py<span class="vs-tab-x">×</span></button>
-          <button class="vs-tab" data-tab="tasks"><i data-lucide="file-code"></i>tasks.py<span class="vs-tab-x">×</span></button>
-          <button class="vs-tab" data-tab="more"><i data-lucide="file-code"></i>more.py<span class="vs-tab-x">×</span></button>
-        </div>
-        <div class="vs-breadcrumbs">
-          <span>thirdperspective</span><i data-lucide="chevron-right"></i><span>app</span><i data-lucide="chevron-right"></i>
-          <span class="crumb-file"><i data-lucide="file-code"></i><span id="crumb-current">today.py</span></span>
-        </div>
         <div class="vs-scroll">
 
     <!-- ===================== TODAY ===================== -->
@@ -836,34 +804,6 @@
     </div><!-- /.vs-scroll -->
       </main><!-- /.vs-editor -->
     </div><!-- /.vs-workbench -->
-
-    <!-- ===================== BOTTOM PANEL ===================== -->
-    <div class="vs-panel" id="vs-panel">
-      <div class="vs-panel-head">
-        <button class="vs-ptab active" data-p="problems">Problems</button>
-        <button class="vs-ptab" data-p="output">Output</button>
-        <button class="vs-ptab" data-p="terminal">Terminal</button>
-        <span class="vs-panel-spacer"></span>
-        <button class="vs-panel-btn" id="vs-panel-toggle" title="Toggle panel"><i data-lucide="chevron-down"></i></button>
-      </div>
-      <div class="vs-panel-body">
-        <div class="vs-pcontent active" data-pc="problems"><span class="ok-line">✓</span> No problems have been detected in the workspace.</div>
-        <div class="vs-pcontent" data-pc="output">[info] ThirdPerspective ready — no warnings, no output.</div>
-        <div class="vs-pcontent" data-pc="terminal"><span class="vs-t-prompt">PS C:\Users\Arsam\ThirdPerspective&gt;</span> <span class="vs-t-caret">_</span></div>
-      </div>
-    </div>
-
-    <!-- ===================== STATUS BAR ===================== -->
-    <footer class="vs-status">
-      <span class="vs-status-item"><span id="live-dot"></span><span id="live-indicator">Not connected</span></span>
-      <span class="vs-status-item" id="current-date">—</span>
-      <button class="vs-status-item" id="sound-toggle" title="Sounds"><i data-lucide="volume-2"></i></button>
-      <span class="vs-status-spacer"></span>
-      <span class="vs-status-item vs-deco">Spaces: 2</span>
-      <span class="vs-status-item vs-deco">UTF-8</span>
-      <span class="vs-status-item vs-deco">Python</span>
-      <span class="vs-status-item vs-deco"><i data-lucide="bell"></i></span>
-    </footer>
 
   </div><!-- /.vs-shell -->
 

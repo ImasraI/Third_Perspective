@@ -1565,31 +1565,20 @@ async function saveWorkout() {
    ========================================================================== */
 
 function switchTab(name) {
-  // Activity-bar icons, explorer rows and editor tabs all carry data-tab.
+  // Activity-bar icons carry data-tab; keep every row in sync with the panel.
   $$('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $$('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'panel-' + name));
-  const crumb = $('#crumb-current');
-  if (crumb) crumb.textContent = name + '.py';
   localStorage.setItem(LS.tab, name);
   if (S.data) drawCharts(S.data);
 }
 
 function bind() {
-  // tabs — delegated on document so the activity bar, explorer tree and
-  // editor tabs all switch panels (they each carry data-tab).
+  // tabs — delegated on document so the activity-bar icons switch panels.
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-tab]');
     if (b) switchTab(b.dataset.tab);
   });
 
-  // bottom panel (Problems / Output / Terminal)
-  $('#vs-panel-toggle').addEventListener('click', () => {
-    $('#vs-panel').classList.toggle('collapsed');
-  });
-  $$('.vs-ptab').forEach((btn) => btn.addEventListener('click', () => {
-    $$('.vs-ptab').forEach(x => x.classList.toggle('active', x === btn));
-    $$('.vs-pcontent').forEach(c => c.classList.toggle('active', c.dataset.pc === btn.dataset.p));
-  }));
   $$('[data-goto]').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.goto)));
 
   // header
