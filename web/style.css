@@ -444,124 +444,88 @@ select.field option { background: var(--panel); color: var(--text); }
 .badge-manual  { background: rgba(169, 161, 150, 0.14); color: var(--text-dim); border: 1px solid rgba(169, 161, 150, 0.3); }
 
 /* ============================================================================
-   Muscle body map — warm charcoal silhouette
+   Muscle body map — anatomical chart (pink / orange / yellow tiers)
    ========================================================================== */
+.bm-stage {
+  margin-top: 0.5rem;
+  padding: 1rem 0.85rem 0.9rem;
+  background: #f6f4f1;
+  border: 1px solid rgba(217, 211, 202, 0.18);
+  border-radius: 4px;
+}
 .bm-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.85rem;
-  align-items: center;
+  gap: 0.6rem;
+  align-items: start;
 }
-.bm-base { opacity: 0.98; }
 .bm-figure { position: relative; display: flex; flex-direction: column; align-items: center; }
-.bm-svg { width: 100%; height: auto; display: block; }
+.bm-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.bm-shadow { fill: rgba(62, 55, 48, 0.1); }
 
-.bm-panel {
-  position: relative;
-  background:
-    radial-gradient(ellipse 70% 60% at 50% 38%, rgba(62, 53, 44, 0.9) 0%, rgba(26, 23, 20, 0.98) 70%);
-  border: 1px solid rgba(217, 211, 202, 0.12);
-  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.8);
-  border-radius: 6px;
-  padding: 1.1rem 1.2rem 1.35rem;
-}
-.bm-panel::before,
-.bm-panel::after {
-  content: '';
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-}
-.bm-panel::before {
-  width: 340px; height: 340px;
-  background: radial-gradient(circle, rgba(217, 211, 202, 0.06) 0%, transparent 70%);
-  top: -80px; left: -90px;
-}
-.bm-panel::after {
-  width: 260px; height: 260px;
-  background: radial-gradient(circle, rgba(217, 211, 202, 0.04) 0%, transparent 70%);
-  bottom: -60px; right: -70px;
-}
-
-.bm-scape {
-  width: 100%;
-  padding: 0.5rem 0 0.2rem;
-  border-radius: 4px;
-  background: rgba(26, 23, 20, 0.6);
-  border: 1px solid rgba(217, 211, 202, 0.09);
-}
-
-.bm-figure svg { overflow: visible; }
+/* Regions inherit their colour from the effort class; the card-coloured
+   stroke is what separates neighbouring muscles, like the white seams in the
+   reference chart. Level 0 stays plain silhouette grey. */
 .bm-region {
   cursor: pointer;
-  transition: fill 0.35s ease, stroke 0.35s ease, filter 0.2s ease;
-  fill: #2f2b26;
-  stroke: #d9d3ca;
-  stroke-width: 1.4;
+  fill: #a9a6a1;
+  stroke: #f6f4f1;
+  stroke-width: 1.1;
   stroke-linejoin: round;
   stroke-linecap: round;
+  transition: fill 0.3s ease, opacity 0.3s ease, filter 0.2s ease;
 }
-.bm-region:hover {
-  fill: #3a352f;
-  filter: brightness(1.08) drop-shadow(0 0 6px rgba(217, 211, 202, 0.25));
-}
-.bm-region:focus {
-  outline: none;
-  fill: #3a352f;
-}
-.bm-region-flat { fill: #2f2b26; stroke: #d9d3ca; }
-.bm-region-hl { fill: #f14c4c; stroke: #f14c4c; }
-.bm-region-hl:hover { fill: #ff6b60; }
+.bm-region.bm-effort-1,
+.bm-region.bm-effort-2 { fill: #f5dd1e; }
+.bm-region.bm-effort-3 { fill: #e8862c; }
+.bm-region.bm-effort-4 { fill: #c0446e; }
+.bm-region:hover { filter: brightness(1.06) saturate(1.08); }
+.bm-region:focus { outline: none; filter: brightness(1.12); }
+.bm-region:focus-visible { filter: brightness(1.12) drop-shadow(0 0 3px rgba(192, 68, 110, 0.9)); }
+.bm-region.bm-out { opacity: 0.22; }
 
-.bm-logo {
-  display: block;
-  width: 100%;
-  max-width: 190px;
-  margin: 0.15rem auto 0.1rem;
-  overflow: visible;
+/* Legend: three tiers on the light card, swatches as squares like the chart. */
+.bm-effort-legend { margin-top: 0.7rem; }
+.bm-effort-levels {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 0.3rem;
 }
-.bm-logo .bm-logo-row { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.bm-logo .bm-logo-row + .bm-logo-row { margin-top: 0; }
-.bm-logo-text {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  margin-top: 2px;
-  line-height: 1.05;
+.bm-effort-level {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em;
+  text-transform: uppercase; color: #55514b;
 }
-.bm-logo-wordmark {
-  font-family: var(--font-ui);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  color: #ece6dd;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.bm-logo-tagline {
-  font-family: var(--font-ui);
-  font-size: 0.46rem;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.bm-effort-legend { margin-top: 0.85rem; text-align: center; }
+.bm-effort-label { color: inherit; }
 .bm-legend-title {
-  font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase;
-  font-weight: 700; color: var(--text-mute); margin-bottom: 0.4rem;
+  margin-top: 0.5rem; font-size: 0.6rem; font-weight: 600;
+  letter-spacing: 0.05em; color: #8b857d;
 }
-.bm-effort-levels { display: flex; flex-wrap: wrap; gap: 0.45rem 0.9rem; justify-content: center; }
-.bm-effort-level { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.65rem; font-weight: 600; color: var(--text-dim); }
 .bm-effort-dot {
-  width: 10px; height: 10px; border-radius: 9999px;
-  background: #f14c4c; box-shadow: 0 0 8px rgba(241, 76, 76, 0.5);
+  width: 13px; height: 13px; border-radius: 2px; flex: none;
+  background: #a9a6a1;
 }
-.bm-effort-dot.bm-none { background: #756f68; box-shadow: 0 0 6px rgba(117, 111, 104, 0.5); }
-.bm-effort-label { color: var(--text-dim); }
+.bm-effort-dot.bm-effort-1,
+.bm-effort-dot.bm-effort-2 { background: #f5dd1e; }
+.bm-effort-dot.bm-effort-3 { background: #e8862c; }
+.bm-effort-dot.bm-effort-4 { background: #c0446e; }
+/* "never trained" — the workout-photo chips pass the bare class 'none'. */
+.bm-effort-dot.none,
+.bm-effort-dot.bm-none { background: #a9a6a1; }
+
+/* Legend chips under the map (app.js buildLegend): same three tiers. */
+.bm-legend { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.bm-key {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.3rem 0.55rem; border-radius: 3px;
+  background: var(--panel-2); border: 1px solid #454039;
+  font-size: 0.68rem; font-weight: 600; color: var(--text-dim);
+}
+.bm-key .dot { width: 10px; height: 10px; border-radius: 2px; flex: none; background: #a9a6a1; }
+.bm-key .dot.bm-effort-1,
+.bm-key .dot.bm-effort-2 { background: #f5dd1e; }
+.bm-key .dot.bm-effort-3 { background: #e8862c; }
+.bm-key .dot.bm-effort-4 { background: #c0446e; }
+.bm-key .ago { color: var(--text-mute); font-family: var(--font-mono); font-size: 0.62rem; }
 
 .bm-window-note { text-align: center; font-size: 0.68rem; color: var(--text-mute); margin-top: 0.3rem; }
 
@@ -576,7 +540,7 @@ select.field option { background: var(--panel); color: var(--text); }
   font-weight: 600;
   padding: 0.28rem 0.55rem;
   border-radius: 3px;
-  white-space: nowrap;
+  max-width: min(260px, calc(100vw - 3rem));
   transform: translate(-50%, -130%);
   opacity: 0;
   transition: opacity 0.15s ease;
