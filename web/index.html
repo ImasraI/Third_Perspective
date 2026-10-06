@@ -659,15 +659,41 @@
           <div id="cal-day-body" class="space-y-2"></div>
         </div>
 
+        <!-- notify: mark the blocks that should ping you 15 min ahead -->
+        <div class="space-y-3 pt-2 border-t border-white/5">
+          <label class="flex items-start justify-between gap-3 cursor-pointer" for="nf-only">
+            <span class="text-xs text-slate-300">
+              <span class="font-semibold text-white">Notify only marked blocks</span>
+              <span class="block text-[11px] text-slate-500">Tap the bell on a class to get a reminder 15 minutes before it starts.</span>
+            </span>
+            <input type="checkbox" id="nf-only" checked class="mt-0.5 w-4 h-4 accent-cyan-400 shrink-0">
+          </label>
+          <div class="flex items-center gap-2">
+            <button id="mark-all-notify" class="btn btn-ghost btn-sm">Mark all blocks</button>
+            <span id="mark-count" class="text-[11px] text-slate-500"></span>
+          </div>
+          <div id="cal-mark-panel" class="hidden space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-white">Marked blocks</h3>
+              <button id="cal-mark-clear" class="btn btn-ghost btn-sm">Clear</button>
+            </div>
+            <div id="cal-mark-list" class="space-y-1 text-xs text-slate-400"></div>
+          </div>
+        </div>
+
         <div class="flex items-center justify-between pt-2 border-t border-white/5">
           <button id="cal-add" class="btn btn-primary">
             <i data-lucide="plus" class="w-4 h-4"></i> Add class
           </button>
           <span id="cal-now" class="text-[11px] text-slate-500"></span>
         </div>
-
         <!-- add class sheet -->
         <div id="cal-add-sheet" class="hidden space-y-4 rounded-3xl border border-white/10 bg-white/5 p-5">
+          <div class="flex items-center justify-between pt-2 border-t border-white/5">
+            <span class="text-[11px] text-slate-500">
+              Tick a class in the calendar to mark it; tick "Notify only these blocks" to send reminders for marked only.
+            </span>
+          </div>
           <div class="flex items-center justify-between">
             <h3 class="text-base font-bold text-white">New class</h3>
             <button id="cal-add-sheet-close" class="btn btn-ghost btn-sm">
@@ -706,6 +732,10 @@
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
               </select>
+            </div>
+            <div>
+              <label class="label">Notify reminder</label>
+              <input id="cl-notify" type="checkbox" class="cursor-pointer" />
             </div>
             <div>
               <label class="label">Color</label>

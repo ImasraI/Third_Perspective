@@ -222,6 +222,32 @@ test('class reminder fires 15 min before', () => {
   const at = N.untilNextWeekly('Wednesday', '10:00', now);
   assert.strictEqual(c.at.getTime(), at.getTime() - 15 * 60000);
 });
+
+test('onlyMarked drops classes the user did not tick', () => {
+  const s = Object.assign({}, baseState, {
+    classes: [
+      { rowId: 2, day: 'Wednesday', time: '10:00', subject: 'Physics', room: 'Hall 3' },
+      { rowId: 7, day: 'Thursday', time: '12:00', subject: 'Chemistry', room: 'Lab' }
+    ]
+  });
+  const plan = N.buildPlan(s, now, { onlyMarked: true, marked: [7] });
+  assert.ok(!plan.some((p) => p.key === 'class-2'), 'unmarked class was scheduled');
+  assert.ok(plan.some((p) => p.key === 'class-7'), 'marked class was dropped');
+  // Tasks are unaffected by the class filter.
+  assert.ok(plan.some((p) => p.key === 'task-2'), 'task reminder was dropped');
+});
+
+test('onlyMarked with no marks schedules no class reminders', () => {
+  const plan = N.buildPlan(baseState, now, { onlyMarked: true, marked: [] });
+  assert.ok(!plan.some((p) => p.key.startsWith('class-')), 'class reminder scheduled with no marks');
+});
+
+test('marked accepts a Set and is ignored without onlyMarked', () => {
+  const asSet = N.buildPlan(baseState, now, { onlyMarked: true, marked: new Set([2]) });
+  assert.ok(asSet.some((p) => p.key === 'class-2'), 'Set of marks not honoured');
+  const unfiltered = N.buildPlan(baseState, now, { marked: [] });
+  assert.ok(unfiltered.some((p) => p.key === 'class-2'), 'marks filtered without onlyMarked');
+});
 test('overdue muscles are reported', () => {
   const plan = N.buildPlan(baseState, now);
   const m = plan.find((p) => p.key.startsWith('muscles-'));

@@ -19,6 +19,7 @@ const S = {
   charts: {},
   acIndex: -1,
   acMatches: [],
+  calendar: { view: 'day', start: new Date(), end: null },
   workouts: [],
   workoutEditMuscles: new Set(),
   workoutEditPanelOpen: false
@@ -114,7 +115,7 @@ function render() {
   renderStudy(d);
   renderTasks();
   renderShopping(d);
-  if (S.calendar) renderCalendar();
+  if (S.calendar) renderCalendar(); else renderMarkPanel();
   renderGoals(d);
   drawCharts(d);
 }
@@ -440,6 +441,72 @@ const COLORS = {
   slate: '#64748b'
 };
 
+/* ============================================================================
+   Calendar notify marks
+   --------------------------------------------------------------------------
+   A class only pings 15 minutes ahead when its bell is ticked (and
+   "Notify only marked blocks" is on). Marks live in localStorage, so they
+   survive reloads without any backend change.
+   ========================================================================== */
+
+const LS_CAL = {
+  marks: 'tp.cal.marks',
+  only: 'tp.cal.onlyMarked'
+};
+
+function readMarks() {
+  try {
+    const raw = localStorage.getItem(LS_CAL.marks);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr.map(Number).filter(function (n) { return n > 0; }) : []);
+  } catch (e) { return new Set(); }
+}
+
+function saveMarks(set) {
+  try { localStorage.setItem(LS_CAL.marks, JSON.stringify(Array.from(set))); } catch (e) { /* quota */ }
+}
+
+/** Default ON: only the blocks the user ticked should remind them. */
+function notifyOnlyMarked() {
+  const v = localStorage.getItem(LS_CAL.only);
+  return v === null ? true : v === '1';
+}
+
+function setNotifyOnly(on) {
+  try { localStorage.setItem(LS_CAL.only, on ? '1' : '0'); } catch (e) { /* quota */ }
+}
+
+/** Options handed to buildPlan/reschedule so the plan matches the toggles. */
+function notifyOpts() {
+  return { classLeadMin: 15, onlyMarked: notifyOnlyMarked(), marked: readMarks() };
+}
+
+/** Paint the "Marked blocks" list under the calendar. */
+function renderMarkPanel() {
+  const panel = $('#cal-mark-panel');
+  if (!panel) return;
+  const marks = readMarks();
+  const classes = (S.data && S.data.classes) || [];
+  const list = classes.filter(function (c) { return marks.has(Number(c.rowId)); });
+
+  const count = $('#mark-count');
+  if (count) count.textContent = marks.size ? marks.size + ' block(s) marked' : 'Nothing marked yet';
+
+  const allBtn = $('#mark-all-notify');
+  if (allBtn) {
+    const all = classes.length > 0 && classes.every(function (c) { return marks.has(Number(c.rowId)); });
+    allBtn.textContent = all ? 'Unmark all blocks' : 'Mark all blocks';
+  }
+
+  if (!list.length) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+  $('#cal-mark-list').innerHTML = list.map(function (c) {
+    const when = [c.day || c.date, c.time].filter(Boolean).join(' · ');
+    return '<div class="cal-mark-item"><span class="dot on"></span>' +
+      esc(when ? when + ' — ' + (c.subject || '') : (c.subject || '')) + '</div>';
+  }).join('');
+}
+
 function renderCalendar() {
   const d = S.data;
   if (!d) return;
@@ -470,6 +537,8 @@ function renderCalendar() {
     $('#cal-day-view').classList.remove('hidden');
     renderDayView(today, start, end);
   }
+  renderMarkPanel();
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -493,20 +562,36 @@ function monthEnd(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
 
 function dayBucket(date) { return date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2,'0') + '-' + String(date.getDate()).padStart(2,'0'); }
 
+/**
+ * Classes that fall on a given calendar day.
+ *
+ * The Classes sheet stores a WEEKDAY ("Wednesday") plus a time, not a date, so
+ * a block recurs every week. A class may also carry an explicit `date` for a
+ * one-off occurrence; either form counts.
+ */
+function classesForDate(d) {
+  const classes = (S.data && S.data.classes) || [];
+  const bucket = dayBucket(d);
+  const name = DAY_NAMES_FULL[(d.getDay() + 6) % 7].toLowerCase(); // Monday-based
+  return classes.filter(function (c) {
+    if (c.date && c.date === bucket) return true;
+    if (!c.day) return false;
+    const day = String(c.day).toLowerCase();
+    return day === name || day.slice(0, 3) === name.slice(0, 3);
+  });
+}
+
 function isSameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 
 function fmtDate(d) { return (d.getMonth()+1) + '/' + d.getDate() + '/' + d.getFullYear(); }
 
 function findClass(date, time) {
-  const key = dayBucket(date);
-  const classes = S.data.classes || [];
-  return classes.filter(c => c.date === key && c.time && c.time <= time);
+  return classesForDate(date).filter(c => c.time && c.time <= time);
 }
 
 /** Determine the class that is active at a given wall-clock time. */
 function activeClassOn(date, time) {
-  const classes = S.data.classes || [];
-  const candidates = classes.filter(c => c.date === dayBucket(date));
+  const candidates = classesForDate(date);
   let best = null, bestEnd = -1;
   candidates.forEach(c => {
     const [h, m] = String(c.time || '00:00').split(':').map(Number);
@@ -537,8 +622,6 @@ function renderMonthGrid(today, start, end) {
   }
 
   const classes = S.data.classes || [];
-  const byDate = {};
-  classes.forEach(c => { if (!byDate[c.date]) byDate[c.date] = []; byDate[c.date].push(c); });
 
   // Weekdays first, then weekend rows.
   const weekdayCount = startDay <= 5 ? 5 - startDay + 1 : 0;
@@ -557,10 +640,11 @@ function renderMonthGrid(today, start, end) {
       const isToday = isSameDay(d, today);
       html += '<div class="bg-slate-800/60 p-1 text-center rounded-t-lg">';
       html += '<div class="text-[11px] font-semibold uppercase text-slate-400">' + d.getDate() + '</div>';
-      const dayClasses = byDate[dayBucket(d)] || [];
+      const dayClasses = classesForDate(d);
       html += '<div class="space-y-0.5">' + dayClasses.map(c => {
         const col = COLORS[c.color] || '#64748b';
-        return '<div class="calendar-event" style="border-left:3px solid ' + col + ';background:rgba(34,211,238,0.08);color:#e2e8f0;padding:2px 4px;border-radius:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(c.subject) + '</div>';
+        const mk = readMarks().has(Number(c.rowId)) ? '<span class="cal-mark-dot" title="Reminder on"></span>' : '';
+        return '<div class="calendar-event' + (mk ? ' cal-block-marked' : '') + '" data-cal-mark="' + c.rowId + '" style="border-left:3px solid ' + col + ';background:rgba(206,145,120,0.10);color:#e2e8f0;padding:2px 4px;border-radius:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + mk + esc(c.subject) + '</div>';
       }).join('') + '</div>';
       html += '</div>';
     }
@@ -579,10 +663,11 @@ function renderMonthGrid(today, start, end) {
       const isToday = isSameDay(d, today);
       html += '<div class="bg-slate-800/60 p-1 text-center rounded-t-lg">';
       html += '<div class="text-[11px] font-semibold uppercase text-slate-400">' + d.getDate() + '</div>';
-      const dayClasses = byDate[dayBucket(d)] || [];
+      const dayClasses = classesForDate(d);
       html += '<div class="space-y-0.5">' + dayClasses.map(c => {
         const col = COLORS[c.color] || '#64748b';
-        return '<div class="calendar-event" style="border-left:3px solid ' + col + ';background:rgba(34,211,238,0.08);color:#e2e8f0;padding:2px 4px;border-radius:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(c.subject) + '</div>';
+        const mk = readMarks().has(Number(c.rowId)) ? '<span class="cal-mark-dot" title="Reminder on"></span>' : '';
+        return '<div class="calendar-event' + (mk ? ' cal-block-marked' : '') + '" data-cal-mark="' + c.rowId + '" style="border-left:3px solid ' + col + ';background:rgba(206,145,120,0.10);color:#e2e8f0;padding:2px 4px;border-radius:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + mk + esc(c.subject) + '</div>';
       }).join('') + '</div>';
       html += '</div>';
     }
@@ -597,23 +682,31 @@ function renderWeekList(today, start, end) {
   const s = start ? new Date(start) : weekStart(today, 1);
   const e = end ? new Date(end) : weekEnd(s);
   while (s <= e) { days.push(new Date(s)); s.setDate(s.getDate() + 1); }
+  const marks = readMarks();
+  const classes = S.data.classes || [];
+  // Build the whole string first: the old version mixed insertAdjacentHTML
+  // into the map callback, so everything inserted was wiped by the join.
   el.innerHTML = days.map(d => {
-    const active = isSameDay(d, today);
-    const classes = S.data.classes || [];
-    const dayClasses = classes.filter(c => c.date === dayBucket(d));
+    const dayClasses = classesForDate(d);
     const label = dayNameFull(d) + ' ' + fmtDate(d);
-    return '<div class="list-row rounded-2xl p-2 " data-date="' + dayBucket(d) + '">' +
+    let row = '<div class="list-row rounded-2xl p-2" data-date="' + dayBucket(d) + '">' +
       '<div class="flex items-center justify-between w-full">' +
       '<div class="flex-1 min-w-0"><div class="text-sm font-semibold text-white truncate">' + esc(label) + '</div>' +
-      '<div class="text-[11px] text-slate-500">' + (dayClasses.length ? dayClasses.length + ' class' + (dayClasses.length>1?'s':'') : 'No class') + '</div></div>';
+      '<div class="text-[11px] text-slate-500">' +
+      (dayClasses.length ? dayClasses.length + ' class' + (dayClasses.length > 1 ? 'es' : '') : 'No class') +
+      '</div></div>';
     if (dayClasses.length) {
-      el.insertAdjacentHTML('beforeend', '<div class="ml-4">' + dayClasses.map(c => {
+      row += '<div class="ml-4 flex flex-wrap gap-1">' + dayClasses.map(c => {
         const col = COLORS[c.color] || '#64748b';
-        return '<span class="badge badge-ai" style="background:' + col + ';color:#04121f">' + esc(c.subject) + '</span>';
-      }).join('') + '</div>');
+        const on = marks.has(Number(c.rowId));
+        return '<span class="badge badge-ai' + (on ? ' cal-block-marked' : '') + '" data-cal-mark="' + c.rowId + '" ' +
+          'title="' + (on ? 'Reminder on — tap to remove' : 'Tap to remind 15 min before') + '" ' +
+          'style="background:' + col + ';color:#04121f;cursor:pointer">' +
+          (on ? '<span class="cal-mark-dot"></span>' : '') + esc(c.subject) + '</span>';
+      }).join('') + '</div>';
     }
-    el.insertAdjacentHTML('beforeend', '<div class="ml-4"><button class="btn btn-ghost btn-xs" data-date="' + dayBucket(d) + '">View</button></div>');
-    el.insertAdjacentHTML('beforeend', '</div>');
+    row += '</div></div>';
+    return row;
   }).join('');
 }
 
@@ -623,21 +716,22 @@ function renderDayView(today, start, end) {
   const date = start;
   const time = new Date().getHours() * 60 + new Date().getMinutes();
   const classes = S.data.classes || [];
-  const dayClasses = classes.filter(c => c.date === dayBucket(date));
-  const open = (() => { const h = new Date().getHours(); return h >= 6 && h < 22; })();
-  if (!open) {
-    el.innerHTML = '<div class="text-center py-10 text-sm text-slate-500">Calendar app is offline · reload the page to reconnect</div>';
-    return;
-  }
+  const dayClasses = classesForDate(date);
   el.innerHTML = dayClasses.map(c => {
     const col = COLORS[c.color] || '#64748b';
     const [h] = String(c.time || '00:00').split(':').map(Number);
     const hrs = h % 12 || 12;
     const ampm = h < 12 ? 'AM' : 'PM';
-    return '<div class="glass-card rounded-2xl p-3 relative" style="border-top:4px solid ' + col + '">' +
+    const on = readMarks().has(Number(c.rowId));
+    return '<div class="glass-card rounded-2xl p-3 relative' + (on ? ' cal-block-marked' : '') + '" style="border-top:4px solid ' + col + '">' +
       '<div class="flex items-center justify-between">' +
       '<div class="font-mono text-sm font-bold text-white">' + hrs + ' ' + ampm + '</div>' +
-      '<div class="font-semibold text-white">' + esc(c.subject) + '</div>' +
+      '<div class="flex items-center gap-2 min-w-0">' +
+      '<div class="font-semibold text-white truncate">' + esc(c.subject) + '</div>' +
+      '<button type="button" class="cal-mark ' + (on ? 'on' : '') + '" data-cal-mark="' + c.rowId + '" ' +
+      'title="Remind me 15 min before" aria-pressed="' + (on ? 'true' : 'false') + '">' +
+      '<i data-lucide="' + (on ? 'bell-ring' : 'bell') + '" class="w-3.5 h-3.5"></i></button>' +
+      '</div>' +
       '</div>' +
       '<div class="text-[11px] text-slate-500">' + esc(c.room || '') + ' · ' + esc(c.time) + (c.endTime ? ' - ' + c.endTime : '') + '</div>' +
       '<div class="text-[11px] text-slate-400">' + (c.repeat === 'daily' ? 'Every day' : c.repeat === 'weekly' ? 'Every week' : c.repeat === 'monthly' ? 'Every month' : 'Once') + '</div>' +
@@ -1495,7 +1589,7 @@ function bind() {
   $('#settings-btn').addEventListener('click', () => {
     $('#api-url-input').value = S.url;
     $('#api-key-input').value = S.key;
-    renderNotifyStatus(S.data ? (N() ? N().buildPlan(S.data, new Date()) : null) : null);
+    renderNotifyStatus(S.data && N() ? N().buildPlan(S.data, new Date(), notifyOpts()) : null);
     $('#settings-modal').classList.remove('hidden');
   });
   $('#close-settings').addEventListener('click', () => $('#settings-modal').classList.add('hidden'));
@@ -1651,8 +1745,9 @@ function bind() {
 
   // classes
   // calendar
-  const $ = (s) => document.querySelector(s);
-  const $$ = (s) => Array.from(document.querySelectorAll(s));
+  // NB: `$`/`$$` are file-level helpers — do NOT redeclare them here: a const
+  // in this scope puts the outer ones in the temporal dead zone and every
+  // earlier $(...) call in bind() throws, silently killing all wiring.
 
   $('#cal-prev').addEventListener('click', () => {
     if (S.calendar.view === 'month') {
@@ -1733,6 +1828,19 @@ function bind() {
   });
   $('#cl-add-cancel').addEventListener('click', () => {
     $('#cl-add-sheet').classList.add('hidden');
+  });
+
+  // Clicking a day row in the week list opens that day's blocks.
+  document.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-date]');
+    if (!row || e.target.closest('[data-cal-mark]')) return;
+    const parts = String(row.dataset.date).split('-').map(Number);
+    if (parts.length !== 3 || !parts[0]) return;
+    S.calendar.view = 'day';
+    S.calendar.start = new Date(parts[0], parts[1] - 1, parts[2]);
+    S.calendar.end = null;
+    $('#cal-view-group').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.id === 'cal-view-day'));
+    renderCalendar();
   });
 
   // goals
@@ -1824,6 +1932,53 @@ function bind() {
   $('#notify-test').addEventListener('click', sendTestNotification);
   $('#notify-off').addEventListener('click', disableNotifications);
 
+  // calendar notify marks
+  const nfOnly = $('#nf-only');
+  if (nfOnly) {
+    nfOnly.checked = notifyOnlyMarked();
+    nfOnly.addEventListener('change', () => {
+      setNotifyOnly(nfOnly.checked);
+      toast(nfOnly.checked ? 'Only marked blocks will remind you' : 'Every class will remind you', 'ok');
+      syncNotifications();
+    });
+  }
+  const markAllBtn = $('#mark-all-notify');
+  if (markAllBtn) {
+    markAllBtn.addEventListener('click', () => {
+      const classes = (S.data && S.data.classes) || [];
+      if (!classes.length) { toast('No classes to mark', 'warn'); return; }
+      const marks = readMarks();
+      const all = classes.every(c => marks.has(Number(c.rowId)));
+      marks.clear();
+      if (!all) classes.forEach(c => marks.add(Number(c.rowId)));
+      saveMarks(marks);
+      renderCalendar();
+      syncNotifications();
+      toast(all ? 'All blocks unmarked' : 'All blocks marked for 15-min reminders', 'ok');
+    });
+  }
+  const markClear = $('#cal-mark-clear');
+  if (markClear) {
+    markClear.addEventListener('click', () => {
+      saveMarks(new Set());
+      renderCalendar();
+      syncNotifications();
+      toast('Marks cleared', 'ok');
+    });
+  }
+  // Bell toggle on a class block (day view / month / week)
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cal-mark]');
+    if (!b) return;
+    const id = Number(b.dataset.calMark);
+    const marks = readMarks();
+    if (marks.has(id)) marks.delete(id); else marks.add(id);
+    saveMarks(marks);
+    renderCalendar();
+    syncNotifications();
+    toast(marks.has(id) ? 'Reminder set — 15 min before' : 'Reminder removed', 'ok');
+  });
+
   // install prompt
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -1908,8 +2063,9 @@ async function syncNotifications() {
     return;
   }
   try {
-    const plan = n.buildPlan(S.data, new Date());
-    await n.reschedule(S.data);
+    const opts = notifyOpts();
+    const plan = n.buildPlan(S.data, new Date(), opts);
+    await n.reschedule(S.data, opts);
     renderNotifyStatus(plan);
   } catch (e) {
     if (e && e.name !== 'NotAllowedError') console.warn('notify reschedule failed', e);

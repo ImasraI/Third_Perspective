@@ -265,6 +265,14 @@ function buildPlan(state, now, opts) {
   const out = [];
   if (!state) return out;
 
+  /* Class reminders can be narrowed to the blocks the user ticked in the
+     calendar. `marked` accepts an array or a Set of rowIds; nothing is filtered
+     until `onlyMarked` is set, so callers that never pass it keep every class. */
+  const markedClasses = options.marked instanceof Set
+    ? options.marked
+    : new Set((options.marked || []).map(Number));
+  const onlyMarked = !!options.onlyMarked;
+
   const add = (key, at, title, body, extra) => {
     if (!(at instanceof Date) || Number.isNaN(at.getTime())) return;
     const when = respectQuietHours(at, base);
@@ -302,6 +310,7 @@ function buildPlan(state, now, opts) {
 
   /* --- Classes: weekly recurrence, N minutes before the bell. */
   for (const c of state.classes || []) {
+    if (onlyMarked && !markedClasses.has(Number(c.rowId))) continue;
     const when = untilNextWeekly(c.day, c.time, base);
     if (!when) continue;
     const at = new Date(when.getTime() - leadMs);
