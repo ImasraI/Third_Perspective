@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>ThirdPerspective</title>
 
-  <meta name="theme-color" content="#090D16">
+  <meta name="theme-color" content="#8f4a12">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ThirdPerspective">
   <link rel="manifest" href="manifest.json">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300E5FF'><circle cx='12' cy='12' r='10'/></svg>">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23d16fa4'><circle cx='12' cy='12' r='10'/></svg>">
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -20,15 +20,25 @@
       theme: {
         extend: {
           colors: {
+            /* Warm VS Code palette: the utility names stay the same, but every
+               value is warmed up so legacy classes follow the IDE theme. */
             brand: {
-              orange: '#FF5722',
-              cyan: '#00E5FF',
-              purple: '#8B5CF6',
-              green: '#10B981',
-              dark: '#090D16'
+              orange: '#e08a4e',
+              cyan:   '#79b8e8',   // links / file icons / blue accent
+              purple: '#d16fa4',   // pink accent (folder names in the shot)
+              green:  '#98c379',
+              dark:   '#1f1d1b'
+            },
+            slate: {
+              50: '#faf7f1', 100: '#f0ebe3', 200: '#e1dbd1', 300: '#cac3b8',
+              400: '#a9a196', 500: '#8b8479', 600: '#6f685f', 700: '#534d45',
+              800: '#3a352f', 900: '#2a2622', 950: '#1f1d1b'
             }
           },
-          fontFamily: { sans: ['Outfit', 'Inter', 'system-ui', 'sans-serif'] }
+          fontFamily: {
+            sans: ['Segoe UI', 'Segoe UI Variable', 'system-ui', 'sans-serif'],
+            mono: ['Consolas', 'JetBrains Mono', 'ui-monospace', 'monospace']
+          }
         }
       }
     }
@@ -36,49 +46,77 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
 
   <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-brand-dark text-slate-100 min-h-screen font-sans antialiased">
+<body class="font-sans antialiased">
 
-  <div class="fixed top-0 left-1/4 w-96 h-96 bg-brand-orange/10 rounded-full blur-3xl pointer-events-none -z-10"></div>
-  <div class="fixed bottom-1/4 right-1/4 w-96 h-96 bg-brand-cyan/10 rounded-full blur-3xl pointer-events-none -z-10"></div>
+  <div class="vs-shell">
 
-  <div class="max-w-5xl mx-auto px-4 py-6 md:py-10 space-y-6 pb-32">
+    <!-- ===================== TITLE BAR ===================== -->
+    <div class="vs-titlebar">
+      <div class="vs-menu">
+        <span>File</span><span>Edit</span><span>Selection</span><span>View</span><span>Go</span><span>Run</span><span>Terminal</span><span>Help</span>
+      </div>
+      <div class="vs-nav-arrows"><i data-lucide="chevron-left"></i><i data-lucide="chevron-right"></i></div>
+      <div class="vs-command"><i data-lucide="search"></i><h1>ThirdPerspective — boom-merged</h1></div>
+      <div class="vs-winbtns"><span>–</span><span>▢</span><span class="vs-win-close">✕</span></div>
+    </div>
 
-    <!-- ===================== HEADER ===================== -->
-    <header class="flex items-center justify-between gap-3">
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <span id="live-dot" class="inline-block w-2.5 h-2.5 rounded-full bg-slate-600"></span>
-          <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-400" id="live-indicator">Not connected</span>
+    <div class="vs-workbench">
+
+      <!-- ===================== ACTIVITY BAR ===================== -->
+      <div class="vs-activity" id="tabs">
+        <button class="tab-btn active" data-tab="today" title="Today"><i data-lucide="sun"></i></button>
+        <button class="tab-btn" data-tab="food" title="Food"><i data-lucide="utensils"></i></button>
+        <button class="tab-btn" data-tab="body" title="Body"><i data-lucide="dumbbell"></i></button>
+        <button class="tab-btn" data-tab="money" title="Money"><i data-lucide="wallet"></i></button>
+        <button class="tab-btn" data-tab="study" title="Study"><i data-lucide="book-open"></i></button>
+        <button class="tab-btn" data-tab="tasks" title="Tasks"><i data-lucide="list-checks"></i></button>
+        <button class="tab-btn" data-tab="more" title="More"><i data-lucide="calendar-days"></i></button>
+        <div class="vs-activity-bottom">
+          <button id="refresh-btn" title="Refresh"><i data-lucide="refresh-cw" id="refresh-icon"></i></button>
+          <button id="settings-btn" title="Settings"><i data-lucide="sliders"></i></button>
         </div>
-        <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight text-white bg-gradient-to-r from-brand-cyan to-brand-purple bg-clip-text text-transparent">ThirdPerspective</h1>
-        <p class="text-xs text-slate-400 font-medium" id="current-date">—</p>
       </div>
-      <div class="flex items-center gap-2">
-        <button id="refresh-btn" class="p-2.5 rounded-2xl bg-slate-800/80 border border-white/5 text-slate-300 active:scale-95" title="Refresh">
-          <i data-lucide="refresh-cw" class="w-5 h-5" id="refresh-icon"></i>
-        </button>
-        <button id="settings-btn" class="p-2.5 rounded-2xl bg-slate-800/80 border border-white/5 text-slate-300 active:scale-95" title="Settings">
-          <i data-lucide="sliders" class="w-5 h-5"></i>
-        </button>
-      </div>
-    </header>
 
-    <!-- ===================== TABS ===================== -->
-    <nav class="glass-card rounded-2xl p-1.5 flex gap-1 overflow-x-auto" id="tabs">
-      <button class="tab-btn active" data-tab="today">Today</button>
-      <button class="tab-btn" data-tab="food">Food</button>
-      <button class="tab-btn" data-tab="body">Body</button>
-      <button class="tab-btn" data-tab="money">Money</button>
-      <button class="tab-btn" data-tab="study">Study</button>
-      <button class="tab-btn" data-tab="tasks">Tasks</button>
-      <button class="tab-btn" data-tab="more">More</button>
-    </nav>
+      <!-- ===================== SIDEBAR / EXPLORER ===================== -->
+      <aside class="vs-sidebar">
+        <div class="vs-side-head"><span>EXPLORER</span><i data-lucide="ellipsis"></i></div>
+        <div class="vs-side-root"><i data-lucide="chevron-down"></i>THIRDPERSPECTIVE</div>
+        <div class="vs-side-folder"><span class="ind"></span><i data-lucide="chevron-down"></i>app</div>
+        <nav>
+          <button class="vs-tree-item active" data-tab="today"><i data-lucide="file-code"></i>today<span class="py">.py</span></button>
+          <button class="vs-tree-item" data-tab="food"><i data-lucide="file-code"></i>food<span class="py">.py</span></button>
+          <button class="vs-tree-item" data-tab="body"><i data-lucide="file-code"></i>body<span class="py">.py</span></button>
+          <button class="vs-tree-item" data-tab="money"><i data-lucide="file-code"></i>money<span class="py">.py</span></button>
+          <button class="vs-tree-item" data-tab="study"><i data-lucide="file-code"></i>study<span class="py">.py</span></button>
+          <button class="vs-tree-item" data-tab="tasks"><i data-lucide="file-code"></i>tasks<span class="py">.py</span></button>
+          <button class="vs-tree-item" data-tab="more"><i data-lucide="file-code"></i>more<span class="py">.py</span></button>
+        </nav>
+        <div class="vs-side-foot"><i data-lucide="chevron-right"></i>Outline</div>
+        <div class="vs-side-foot"><i data-lucide="chevron-right"></i>Timeline</div>
+      </aside>
+
+      <!-- ===================== EDITOR ===================== -->
+      <main class="vs-editor">
+        <div class="vs-tabs" id="vs-tabs">
+          <button class="vs-tab active" data-tab="today"><i data-lucide="file-code"></i>today.py<span class="vs-tab-x">×</span></button>
+          <button class="vs-tab" data-tab="food"><i data-lucide="file-code"></i>food.py<span class="vs-tab-x">×</span></button>
+          <button class="vs-tab" data-tab="body"><i data-lucide="file-code"></i>body.py<span class="vs-tab-x">×</span></button>
+          <button class="vs-tab" data-tab="money"><i data-lucide="file-code"></i>money.py<span class="vs-tab-x">×</span></button>
+          <button class="vs-tab" data-tab="study"><i data-lucide="file-code"></i>study.py<span class="vs-tab-x">×</span></button>
+          <button class="vs-tab" data-tab="tasks"><i data-lucide="file-code"></i>tasks.py<span class="vs-tab-x">×</span></button>
+          <button class="vs-tab" data-tab="more"><i data-lucide="file-code"></i>more.py<span class="vs-tab-x">×</span></button>
+        </div>
+        <div class="vs-breadcrumbs">
+          <span>thirdperspective</span><i data-lucide="chevron-right"></i><span>app</span><i data-lucide="chevron-right"></i>
+          <span class="crumb-file"><i data-lucide="file-code"></i><span id="crumb-current">today.py</span></span>
+        </div>
+        <div class="vs-scroll">
 
     <!-- ===================== TODAY ===================== -->
     <section class="tab-panel space-y-6" id="panel-today">
@@ -135,12 +173,11 @@
               </div>
               <div class="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
                 <div id="bar-spend" class="bg-gradient-to-r from-indigo-500 to-brand-purple h-full rounded-full transition-all duration-700" style="width:0%"></div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
-
+    </div>
+  </div>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div class="glass-card rounded-2xl p-4 space-y-1">
           <div class="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Spent today</div>
@@ -796,7 +833,39 @@
       </div>
     </section>
 
-  </div>
+    </div><!-- /.vs-scroll -->
+      </main><!-- /.vs-editor -->
+    </div><!-- /.vs-workbench -->
+
+    <!-- ===================== BOTTOM PANEL ===================== -->
+    <div class="vs-panel" id="vs-panel">
+      <div class="vs-panel-head">
+        <button class="vs-ptab active" data-p="problems">Problems</button>
+        <button class="vs-ptab" data-p="output">Output</button>
+        <button class="vs-ptab" data-p="terminal">Terminal</button>
+        <span class="vs-panel-spacer"></span>
+        <button class="vs-panel-btn" id="vs-panel-toggle" title="Toggle panel"><i data-lucide="chevron-down"></i></button>
+      </div>
+      <div class="vs-panel-body">
+        <div class="vs-pcontent active" data-pc="problems"><span class="ok-line">✓</span> No problems have been detected in the workspace.</div>
+        <div class="vs-pcontent" data-pc="output">[info] ThirdPerspective ready — no warnings, no output.</div>
+        <div class="vs-pcontent" data-pc="terminal"><span class="vs-t-prompt">PS C:\Users\Arsam\ThirdPerspective&gt;</span> <span class="vs-t-caret">_</span></div>
+      </div>
+    </div>
+
+    <!-- ===================== STATUS BAR ===================== -->
+    <footer class="vs-status">
+      <span class="vs-status-item"><span id="live-dot"></span><span id="live-indicator">Not connected</span></span>
+      <span class="vs-status-item" id="current-date">—</span>
+      <button class="vs-status-item" id="sound-toggle" title="Sounds"><i data-lucide="volume-2"></i></button>
+      <span class="vs-status-spacer"></span>
+      <span class="vs-status-item vs-deco">Spaces: 2</span>
+      <span class="vs-status-item vs-deco">UTF-8</span>
+      <span class="vs-status-item vs-deco">Python</span>
+      <span class="vs-status-item vs-deco"><i data-lucide="bell"></i></span>
+    </footer>
+
+  </div><!-- /.vs-shell -->
 
   <!-- ===================== SETTINGS MODAL ===================== -->
   <div id="settings-modal" class="modal hidden">
@@ -872,6 +941,7 @@
 
   <script src="notify.js"></script>
   <script src="bodymap.js"></script>
+  <script src="sound.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

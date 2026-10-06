@@ -33,6 +33,7 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function toast(msg, kind) {
+  if (globalThis.TPSound) TPSound.toast(kind || 'ok');
   const t = $('#toast');
   t.textContent = msg;
   t.className = 'toast on ' + (kind || 'ok');
@@ -151,10 +152,10 @@ function renderRings(d) {
   setRing('#ring-protein', 64, n.protein, g.protein);
   setRing('#ring-budget', 46, e.todayTotal, Math.max(1, e.monthBudget / 30));
 
-  // Update ring colors to match new branding
-  $('#ring-calorie').style.color = 'rgba(34, 211, 238, 0.6)';
-  $('#ring-protein').style.color = 'rgba(168, 85, 247, 0.6)';
-  $('#ring-budget').style.color = 'rgba(245, 158, 11, 0.6)';
+  // Ring glow colors — warm IDE palette
+  $('#ring-calorie').style.color = 'rgba(224, 138, 78, 0.65)';
+  $('#ring-protein').style.color = 'rgba(121, 184, 232, 0.65)';
+  $('#ring-budget').style.color = 'rgba(209, 111, 164, 0.65)';
 }
 
 function renderMetrics(d) {
@@ -431,14 +432,14 @@ async function addShoppingItem() {
    ========================================================================== */
 
 const COLORS = {
-  cyan: '#22d3ee',
-  purple: '#a855f7',
-  green: '#22c55e',
-  orange: '#fb923c',
-  pink: '#ec4899',
-  amber: '#f59e0b',
-  red: '#ef4444',
-  slate: '#64748b'
+  cyan: '#79b8e8',
+  purple: '#c08bd9',
+  green: '#98c379',
+  orange: '#e08a4e',
+  pink: '#d16fa4',
+  amber: '#e3a04a',
+  red: '#f14c4c',
+  slate: '#8b8479'
 };
 
 /* ============================================================================
@@ -761,14 +762,14 @@ function drawCharts(d) {
       labels: cat.map(c => c.k),
       datasets: [{
         data: cat.map(c => c.v),
-        backgroundColor: ['#8B5CF6', '#FF5722', '#00E5FF', '#10B981', '#F59E0B', '#EF4444', '#60A5FA', '#F472B6'],
-        borderColor: 'rgba(9,13,22,0.8)', borderWidth: 2
+        backgroundColor: ['#d16fa4', '#e08a4e', '#79b8e8', '#98c379', '#e3a04a', '#f14c4c', '#4ec9b0', '#c08bd9'],
+        borderColor: 'rgba(31,29,27,0.85)', borderWidth: 2
       }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { position: 'bottom', labels: { color: '#94a3b8', boxWidth: 10, font: { size: 10 } } },
+        legend: { position: 'bottom', labels: { color: '#a9a196', boxWidth: 10, font: { size: 10 } } },
         tooltip: { callbacks: { label: (c) => fmt(c.raw) } }
       }
     }
@@ -1564,18 +1565,31 @@ async function saveWorkout() {
    ========================================================================== */
 
 function switchTab(name) {
-  $$('#tabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  // Activity-bar icons, explorer rows and editor tabs all carry data-tab.
+  $$('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $$('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'panel-' + name));
+  const crumb = $('#crumb-current');
+  if (crumb) crumb.textContent = name + '.py';
   localStorage.setItem(LS.tab, name);
   if (S.data) drawCharts(S.data);
 }
 
 function bind() {
-  // tabs
-  $('#tabs').addEventListener('click', (e) => {
+  // tabs — delegated on document so the activity bar, explorer tree and
+  // editor tabs all switch panels (they each carry data-tab).
+  document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-tab]');
     if (b) switchTab(b.dataset.tab);
   });
+
+  // bottom panel (Problems / Output / Terminal)
+  $('#vs-panel-toggle').addEventListener('click', () => {
+    $('#vs-panel').classList.toggle('collapsed');
+  });
+  $$('.vs-ptab').forEach((btn) => btn.addEventListener('click', () => {
+    $$('.vs-ptab').forEach(x => x.classList.toggle('active', x === btn));
+    $$('.vs-pcontent').forEach(c => c.classList.toggle('active', c.dataset.pc === btn.dataset.p));
+  }));
   $$('[data-goto]').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.goto)));
 
   // header
