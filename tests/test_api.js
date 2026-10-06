@@ -323,6 +323,30 @@ section('[6] workouts + muscle recovery map');
 }
 
 // ===========================================================================
+section('[6b] deriveRowLoad survives legacy/missing rows (driveRowLoad crash)');
+{
+  const sb = makeSandbox();
+  // The exact crash from the driveRowLoad script:
+  //   TypeError: Cannot read properties of undefined (reading 'exercises')
+  check('undefined rec returns null instead of throwing',
+    sb.deriveRowLoad(undefined, '2026-10-05') === null);
+  check('null rec returns null', sb.deriveRowLoad(null, '2026-10-05') === null);
+  check('empty rec returns null', sb.deriveRowLoad({}, '2026-10-05') === null);
+
+  // Legacy rows carry only `exercises`, never a `muscles` array.
+  const legacy = sb.deriveRowLoad({ rowId: 2, exercises: 'bench 80kg 4x10' }, '2026-10-05');
+  check('legacy row with parseable text derives a load',
+    legacy !== null && typeof legacy === 'object', JSON.stringify(legacy));
+
+  const garbage = sb.deriveRowLoad({ rowId: 3, exercises: 'zzz not a workout' }, '2026-10-05');
+  check('unparseable text with no muscles returns null', garbage === null, JSON.stringify(garbage));
+
+  const stored = sb.deriveRowLoad({ rowId: 4, exercises: 'zzz', muscles: ['chest'] }, '2026-10-05');
+  check('unparseable text falls back to a flat muscle bucket',
+    stored !== null && stored.chest === 200, JSON.stringify(stored));
+}
+
+// ===========================================================================
 section('[7] AI muscle detection from free text');
 {
   const sb = makeSandbox();

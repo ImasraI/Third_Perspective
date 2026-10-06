@@ -1010,7 +1010,8 @@ function workoutState() {
 
     // Old rows have no stored load. Rather than show them as untrained, derive
     // an estimate from the raw exercise text so history still colours correctly.
-    const load = storedLoad || (d ? deriveRowLoad(rec, d) : null);
+    const derived = workoutRecs().find(function (r) { return r.rowId === i + 1; });
+    const load = storedLoad || (derived && d ? deriveRowLoad(derived, d) : null);
     if (load) {
       if (!byDay[d]) byDay[d] = {};
       Object.keys(load).forEach(function (m) {
@@ -1397,16 +1398,52 @@ function parseLoadCell(v) {
  * numbers match what a fresh entry would produce.
  */
 function deriveRowLoad(rec, date) {
+  if (!rec) return null;
   const parsed = parseWorkoutLine(rec.exercises || rec.name || '', bodyWeightKg());
-  if (!parsed.matched || !parsed.muscles.length) {
+  if (!parsed.matched && !parsed.muscles.length) {
     // Nothing recognisable: fall back to a flat session so a plain muscle entry
     // still registers as "trained", just without fine-grained effort.
-    if (!rec.muscles.length) return null;
+    if (!rec.muscles || !rec.muscles.length) return null;
     const flat = {};
     rec.muscles.forEach(function (m) { if (isPaintableMuscle(m)) flat[m] = 200; });
     return flat;
   }
   return parsed.load;
+}
+
+/**
+ * Build the workout rows array from the Workouts sheet.
+ * One entry per data row (header excluded). Old rows used a single bucket
+ * per area and hold only `exercises` + `durationMin`; newer rows also carry
+ * `muscles` and `load`.
+ */
+function workoutRecs() {
+  const sheet = getSheet(SHEETS.WORKOUTS);
+  const rows = sheet ? sheet.getDataRange().getValues() : [];
+  const out = [];
+  for (let i = rows.length - 1; i >= 1; i--) {
+    if (!rows[i][1]) continue;
+    const muscles = [];
+    const load = [];
+    const extra = rows[i][7];
+    if (Array.isArray(extra)) {
+      for (let j = 0; j < extra.length; j += 2) {
+        const k = String(extra[j]);
+        if (k) muscles.push(k);
+        if (j + 1 < extra.length) load.push(extra[j + 1]);
+      }
+    }
+    out.push({
+      rowId: i + 1,
+      date: rowDateStr(rows[i][1]),
+      name: rows[i][2],
+      exercises: rows[i][3],
+      durationMin: num(rows[i][4]),
+      muscles: muscles,
+      load: load.length ? JSON.parse(load.join('')) : null
+    });
+  }
+  return out;
 }
 
 function studyState() {
