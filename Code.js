@@ -37,7 +37,12 @@ const CONFIG = {
   MONTHLY_SPEND_BUDGET: 30000000,
   CURRENCY_SYMBOL: 'toman',
   TIMEZONE: 'Asia/Tehran',
-  GEMINI_MODEL: 'gemini-2.5-flash',
+  // Google retires model ids. gemini-2.5-flash now answers
+  // 404 "no longer available to new users", which the settings test showed as
+  // a broken key. An ordered list means a retirement, or a demand spike (503),
+  // falls through to the next model instead of taking the AI features down.
+  GEMINI_MODELS: ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'],
+  GEMINI_MODEL: 'gemini-3.8-flash',
   DEFAULT_BODY_WEIGHT_KG: 70,
   // Gemini inline images are billed as tokens; keep the upload budget small.
   MAX_IMAGE_BYTES: 2200000,
@@ -47,6 +52,9 @@ const CONFIG = {
 
 // Script Properties (Project Settings -> Script Properties):
 //   GEMINI_API_KEY  = your AI Studio key  (required for natural language logging)
+//                     This object holds the property NAME, never the key itself.
+//                     A key pasted here by mistake is still picked up by
+//                     getGeminiKey(), but Script Properties keeps it out of git.
 //   APP_KEY         = optional shared secret. If set, every request must send
 //                     it, otherwise the URL is open to anyone who finds it.
 const KEYS = {
@@ -1892,19 +1900,34 @@ function localFoodStub(text) {
   })].map(function (f) { f.estimated = true; return f; });
 }
 
-/**
- * Gemini REST call.
- *
- * `parts` lets a caller attach an inline image alongside the text prompt, which
- * is what makes food-photo recognition possible. Keeping it generic means the
- * chatbot and the food-photo endpoint share one transport and one error shape.
- */
-function callGeminiParts(parts, schema, options) {
-  const opts = options || {};
-  const key = getGeminiKey();
-  if (!key) return { ok: false, error: 'No GEMINI_API_KEY' };
+/* ---------------------------------------------------------------------------
+   Gemini transport.
+   One place that knows the URL, the auth, the response-schema contract and the
+   model fallback chain. `parts` lets a caller attach an inline image next to
+   the text prompt, which is what makes food-photo recognition possible, so the
+   chatbot and the photo endpoint share one error shape.
+   ------------------------------------------------------------------------- */
+
+/** Models to try, in order. CONFIG.GEMINI_MODEL is kept as a last stop. */
+function geminiModelList() {
+  const list = (CONFIG.GEMINI_MODELS || []).concat([CONFIG.GEMINI_MODEL || '']);
+  const out = [];
+  list.forEach(function (m) { if (m && out.indexOf(m) === -1) out.push(m); });
+  return out;
+}
+
+/** True when trying the next model on the list could plausibly fix this. */
+function geminiRetryable(status, text, parsed) {
+  if (status === 404 || status === 429 || status === 503) return true;
+  const reason = (parsed && parsed.error && parsed.error.status) || '';
+  if (reason === 'NOT_FOUND' || reason === 'UNAVAILABLE' || reason === 'RESOURCE_EXHAUSTED') return true;
+  return /no longer available|not supported for|model not found/i.test(String(text || ''));
+}
+
+/** One generateContent attempt against one model. */
+function geminiRequest(model, key, parts, schema, opts) {
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
-    CONFIG.GEMINI_MODEL + ':generateContent?key=' + encodeURIComponent(key);
+    model + ':generateContent?key=' + encodeURIComponent(key);
   const body = {
     contents: [{ role: opts.role || 'user', parts: parts }],
     generationConfig: {
@@ -1925,25 +1948,106 @@ function callGeminiParts(parts, schema, options) {
       payload: JSON.stringify(body),
       muteHttpExceptions: true
     });
+    const status = res.getResponseCode();
     const text = res.getContentText();
-    if (res.getResponseCode() !== 200) return { ok: false, error: 'HTTP ' + res.getResponseCode() + ': ' + text.slice(0, 400) };
+    if (status !== 200) {
+      // Google explains itself in the body ("no longer available", quota, bad
+      // key). Keep that sentence: it is the difference between "the key is
+      // wrong" and "the key is fine, the model is gone".
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch (e) { /* plain-text error page */ }
+      const message = (parsed && parsed.error && parsed.error.message) || text.slice(0, 400);
+      return {
+        ok: false,
+        model: model,
+        status: status,
+        error: 'HTTP ' + status + ' · ' + model + ': ' + message,
+        retryable: geminiRetryable(status, text, parsed)
+      };
+    }
     const jsonOut = JSON.parse(text);
     const cand = jsonOut.candidates && jsonOut.candidates[0];
     const part = cand && cand.content && cand.content.parts && cand.content.parts[0];
-    if (!part) return { ok: false, error: 'Empty response: ' + text.slice(0, 300) };
+    if (!part) return { ok: false, model: model, error: 'Empty response: ' + text.slice(0, 300) };
     // A finishReason of SAFETY means the image was refused, not that it is absent.
     if (cand.finishReason && cand.finishReason !== 'STOP') {
-      return { ok: false, error: 'Blocked (' + cand.finishReason + '): ' + text.slice(0, 200) };
+      return { ok: false, model: model, error: 'Blocked (' + cand.finishReason + '): ' + text.slice(0, 200) };
     }
-    if (opts.raw) return { ok: true, data: part.text };
-    return { ok: true, data: JSON.parse(part.text) };
+    if (opts.raw) return { ok: true, model: model, data: part.text };
+    return { ok: true, model: model, data: JSON.parse(part.text) };
   } catch (e) {
-    return { ok: false, error: String(e) };
+    return { ok: false, model: model, error: String(e) };
   }
+}
+
+/**
+ * Try each configured model until one answers.
+ *
+ * Only model-level failures retry: a bad key, a blocked image or a malformed
+ * prompt fails the same way on every model, so it returns immediately.
+ * The successful reply carries `model`, so callers can report which one served.
+ */
+function callGeminiParts(parts, schema, options) {
+  const opts = options || {};
+  const key = getGeminiKey();
+  if (!key) {
+    return {
+      ok: false,
+      needsKey: true,
+      error: 'No Gemini key found. Set GEMINI_API_KEY in Script Properties ' +
+        '(Project Settings -> Script Properties).'
+    };
+  }
+  const models = geminiModelList();
+  let last = { ok: false, error: 'No Gemini model configured' };
+  for (let i = 0; i < models.length; i++) {
+    const res = geminiRequest(models[i], key, parts, schema, opts);
+    if (res.ok) return res;
+    last = res;
+    if (!res.retryable) return res;
+  }
+  return last;
 }
 
 function callGemini(prompt, schema) {
   return callGeminiParts([{ text: prompt }], schema);
+}
+
+/**
+ * "Test Gemini" button: proves the key both exists and reaches Google.
+ * The reply is flattened to a plain string so the settings toast can show it
+ * directly (the schema keeps Gemini honest about the shape).
+ */
+function geminiTest() {
+  if (!getGeminiKey()) {
+    return {
+      ok: false,
+      needsKey: true,
+      error: 'GEMINI_API_KEY is not set in Script Properties',
+      hint: 'Project Settings -> Script Properties -> add GEMINI_API_KEY with your AI Studio key. ' +
+        'Pasting the key straight into KEYS.GEMINI also works now.'
+    };
+  }
+  const res = callGemini('Reply with the single word: OK', {
+    type: 'object', properties: { ok: { type: 'string' } }, required: ['ok']
+  });
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: res.error,
+      model: res.model || '',
+      modelsTried: geminiModelList(),
+      keySource: geminiKeySource()
+    };
+  }
+  const reply = res.data && res.data.ok !== undefined ? String(res.data.ok) : JSON.stringify(res.data);
+  return {
+    ok: true,
+    model: res.model || CONFIG.GEMINI_MODEL,
+    modelsTried: geminiModelList(),
+    keySource: geminiKeySource(),
+    response: reply
+  };
 }
 
 // ============================================================================
@@ -2290,8 +2394,58 @@ function append(sheetName, row) {
   return sheet.getLastRow();
 }
 
+function scriptProperties() {
+  return PropertiesService.getScriptProperties();
+}
+
+/** Strip the quotes/whitespace that travel with a copy-pasted key. */
+function cleanKey(v) {
+  return String(v === null || v === undefined ? '' : v).trim()
+    .replace(/^["'`]|[\"'`]$/g, '')
+    .replace(/^Bearer\s+/i, '')
+    .trim();
+}
+
+/** Legacy AIza… keys, and the AQ. auth keys AI Studio issues now. */
+function looksLikeGeminiKey(v) {
+  return /^(AIza[0-9A-Za-z_\-]{10,}|AQ\.[0-9A-Za-z_\-.]+)$/.test(cleanKey(v));
+}
+
+/** Which slot the key actually came from, so gemini.test() can say so. */
+function geminiKeySource() {
+  if (cleanKey(scriptProperties().getProperty(KEYS.GEMINI))) {
+    return 'Script Properties · ' + KEYS.GEMINI;
+  }
+  if (looksLikeGeminiKey(KEYS.GEMINI)) return 'KEYS.GEMINI (key pasted in code)';
+  const name = strayKeyName();
+  return name ? 'Script Properties · ' + name : '';
+}
+
+/** A key filed under the wrong property name is still worth finding. */
+function strayKeyName() {
+  const props = scriptProperties();
+  if (typeof props.getProperties !== 'function') return '';
+  const all = props.getProperties() || {};
+  const names = Object.keys(all).filter(function (k) { return looksLikeGeminiKey(all[k]); });
+  return names.length ? names[0] : '';
+}
+
+/**
+ * The Gemini key.
+ *
+ * GEMINI_API_KEY in Script Properties is the documented home for it. Two
+ * mistakes used to fail silently and look exactly like "no key at all":
+ *   1. the key pasted into KEYS.GEMINI instead of the property NAME — the old
+ *      code called getProperty() with the key as the property name;
+ *   2. the key stored under some other property name.
+ * Both are found here, and gemini.test() reports which slot was used.
+ */
 function getGeminiKey() {
-  return (PropertiesService.getScriptProperties().getProperty(KEYS.GEMINI) || '').trim();
+  const named = cleanKey(scriptProperties().getProperty(KEYS.GEMINI));
+  if (named) return named;
+  if (looksLikeGeminiKey(KEYS.GEMINI)) return cleanKey(KEYS.GEMINI);
+  const stray = strayKeyName();
+  return stray ? cleanKey(scriptProperties().getProperty(stray)) : '';
 }
 
 function num(v) {

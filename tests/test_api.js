@@ -91,6 +91,7 @@ function makeSandbox(opts) {
     PropertiesService: {
       getScriptProperties: () => ({
         getProperty: (k) => (k in store ? store[k] : null),
+        getProperties: () => Object.assign({}, store),
         setProperty: (k, v) => { store[k] = String(v); },
         deleteProperty: (k) => { delete store[k]; }
       })
@@ -115,6 +116,23 @@ function makeSandbox(opts) {
       fetch(url, o) {
         if (url.includes('generativelanguage')) {
           calls.gemini++;
+          sent.push(url);
+          // Google retires model ids (404) and overloads them (503). Let a test
+          // name the ids that fail so the fallback chain gets exercised.
+          const model = (url.match(/models\/([^:?]+)/) || [])[1] || '';
+          const code = (opts.modelStatus || {})[model];
+          if (code) {
+            return {
+              getResponseCode: () => code,
+              getContentText: () => JSON.stringify({
+                error: {
+                  code: code,
+                  status: code === 404 ? 'NOT_FOUND' : (code === 429 ? 'RESOURCE_EXHAUSTED' : 'UNAVAILABLE'),
+                  message: 'models/' + model + ' is no longer available to new users'
+                }
+              })
+            };
+          }
           if (opts.geminiResponse) {
             return { getResponseCode: () => 200, getContentText: () => JSON.stringify({
               candidates: [{ content: { parts: [{ text: JSON.stringify(opts.geminiResponse) }] } }]
@@ -259,6 +277,56 @@ section('[4] gemini failures degrade gracefully');
   check('no API key at all still works offline', p2.ok === true && p2.source === 'local', JSON.stringify(p2.source));
   const t = call(sb2, { action: 'gemini.test' });
   check('gemini.test reports the missing key', t.ok === false, JSON.stringify(t));
+  check('gemini.test names the exact property', /GEMINI_API_KEY/.test(t.error || ''), t.error);
+  check('gemini.test flags needsKey for the UI', t.needsKey === true, JSON.stringify(t));
+
+  // With a key present the ping must really reach Gemini. This is the check
+  // that catches a missing geminiTest(): dispatch would swallow the
+  // ReferenceError as a generic ok:false, which the assertions above accept.
+  const tOk = call(makeSandbox(), { action: 'gemini.test' });
+  check('gemini.test succeeds when the key is set', tOk.ok === true && tOk.response === 'OK', JSON.stringify(tOk));
+  check('gemini.test reports the model', tOk.model === 'gemini-3.8-flash', String(tOk.model));
+  check('gemini.test names the key slot it used',
+    /GEMINI_API_KEY/.test(tOk.keySource || ''), String(tOk.keySource));
+
+  const tFail = call(makeSandbox({ geminiFail: true }), { action: 'gemini.test' });
+  check('gemini.test surfaces transport errors', tFail.ok === false && /429/.test(tFail.error || ''), JSON.stringify(tFail));
+
+  // A retired model id must not read as a broken key. This is the failure that
+  // made the settings button fail with a perfectly valid key: gemini-2.5-flash
+  // answered 404 "no longer available to new users".
+  const sbRetired = makeSandbox({ modelStatus: { 'gemini-3.8-flash': 404 } });
+  const tFallback = call(sbRetired, { action: 'gemini.test' });
+  check('gemini.test falls through a retired model',
+    tFallback.ok === true && tFallback.model === 'gemini-flash-latest', JSON.stringify(tFallback));
+  check('gemini.test tries the preferred model first',
+    /gemini-3\.8-flash/.test(sbRetired.sent[0] || ''), String(sbRetired.sent[0]));
+
+  // Every model down is still a clean error, not a crash, and it reports what
+  // it tried instead of blaming the key.
+  const sbAllDown = makeSandbox({
+    modelStatus: { 'gemini-3.8-flash': 503, 'gemini-flash-latest': 503, 'gemini-3.1-flash-lite': 503 }
+  });
+  const tDown = call(sbAllDown, { action: 'gemini.test' });
+  check('all models down reports a real error', tDown.ok === false && /503/.test(tDown.error || ''), JSON.stringify(tDown));
+  check('the failure lists every model tried',
+    Array.isArray(tDown.modelsTried) && tDown.modelsTried.length === 3, JSON.stringify(tDown.modelsTried));
+
+  // The key pasted into KEYS.GEMINI (a property NAME slot) used to be looked up
+  // as a property called "AQ.xxx", which found nothing and reported "not set".
+  const sbInline = makeSandbox({ props: {} });
+  vm.runInContext("KEYS.GEMINI = 'AQ.test-inline-key-1234567890'", sbInline);
+  const tInline = call(sbInline, { action: 'gemini.test' });
+  check('a key pasted into KEYS.GEMINI still works', tInline.ok === true, JSON.stringify(tInline));
+  check('gemini.test says the key came from code',
+    /KEYS\.GEMINI/.test(tInline.keySource || ''), String(tInline.keySource));
+
+  // Same kindness for a key filed under an unexpected property name.
+  const sbStray = makeSandbox({ props: { MY_GEMINI_KEY: 'AQ.stray-key-1234567890' } });
+  const tStray = call(sbStray, { action: 'gemini.test' });
+  check('a key under another property name is found', tStray.ok === true, JSON.stringify(tStray));
+  check('gemini.test names the stray property',
+    /MY_GEMINI_KEY/.test(tStray.keySource || ''), String(tStray.keySource));
 }
 
 // ===========================================================================

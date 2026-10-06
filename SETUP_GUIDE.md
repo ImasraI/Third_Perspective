@@ -139,8 +139,14 @@ install the app (browser menu → *Install ThirdPerspective*) and use Chrome.
 
 ## 5. Gemini model / limits
 
-- Default model: `gemini-2.5-flash` (free tier, 1500 req/min).
-- Change it in `Code.js` → `GEMINI_MODEL` constant.
+- Models are tried in order from `Code.js` → `GEMINI_MODELS`, falling to the next one when
+  Google retires an id (404) or the model is overloaded (503).
+  Current order: `gemini-3.8-flash`, `gemini-flash-latest`, `gemini-3.1-flash-lite`.
+- Google retires model ids without warning. When that happens the app keeps working: it
+  reports the model that actually answered, and `Settings → Test Gemini` lists every id it tried.
+- Free-tier keys are issued as `AQ.…` auth keys now (older keys start with `AIza`). Both work here.
+- AI Studio keys are sent as a `?key=` query parameter, which is the native Gemini route.
+  They are **not** OAuth tokens, so `Authorization: Bearer …` is rejected with 401.
 - If quota is hit, the parser falls back to a local stub (food shows `~` and must be filled manually).
 
 ---
@@ -174,7 +180,10 @@ Values are saved to **Script Properties** → persist across redeploys.
 | No notifications appear | You must press **Enable reminders** — permission is never requested automatically. Also confirm the browser is not set to block notifications for the site. |
 | Reminders only arrive while a tab is open | Expected on browsers without Notification Triggers. Install the PWA and use Chrome to get closed-app reminders. |
 | A reminder fired twice | Press **Turn reminders off** then **Enable reminders** to clear the queue. |
-| `gemini.test` returns `ok: false` | Script Property `GEMINI_API_KEY` missing or invalid. |
+| `gemini.test` returns `ok: false` with "not set in Script Properties" | There is no Script Property named `GEMINI_API_KEY`. Note that `KEYS` in `Code.js` holds the property *name*, not the key — the key itself belongs in Project Settings → Script Properties. (A key pasted into `KEYS.GEMINI` is now detected and used anyway, but keeping it in Script Properties keeps it out of git.) |
+| `gemini.test` returns `ok: false` with `HTTP 404` and "no longer available" | The model id was retired. Update `GEMINI_MODELS` in `Code.js`. The reply names the model that failed. |
+| `gemini.test` returns `ok: false` with `HTTP 401` | The key was revoked or copied with stray quotes/spaces. Create a fresh key at https://aistudio.google.com/apikey and re-apply it — quotes are stripped automatically, but a deleted key cannot be revived. |
+| `gemini.test` returns `ok: false` with `HTTP 429` | Free-tier quota or rate limit. Wait a minute; the parser falls back to the local stub meanwhile. |
 | Food macros look wrong | The AI may have guessed. Edit the numbers inline before hitting **Add** — the corrected values are cached for next time. |
 | Body map doesn't colour | Workouts must include at least one valid muscle from the 12-group list. |
 | Install button never appears | Ensure HTTPS (Netlify provides it), manifest.json + sw.js are served, and you've interacted with the page once. |

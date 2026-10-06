@@ -1922,7 +1922,9 @@ function bind() {
     catch (e) { toast(e.message, 'err'); }
   });
   $('#gemin-test').addEventListener('click', async () => {
-    try { const r = await api('gemini.test'); toast('Gemini OK: ' + r.response, 'ok'); }
+    // Show which model answered: a fallback model serving your traffic is worth
+    // knowing about, and it makes "it works" verifiable at a glance.
+    try { const r = await api('gemini.test'); toast('Gemini OK: ' + r.response + (r.model ? ' · ' + r.model : ''), 'ok'); }
     catch (e) { toast(e.message, 'err'); }
   });
 
