@@ -17,7 +17,8 @@ function saveSetting(key, value) {
 const LS = {
   url: 'gt.apiUrl',
   key: 'gt.appKey',
-  tab: 'gt.tab'
+  tab: 'gt.tab',
+  snapshot: 'gt.dashboard.v1'
 };
 
 const S = {
@@ -88,22 +89,45 @@ function setConn(state, label) {
   ind.textContent = label;
 }
 
-async function load() {
-  if (!S.url) { setConn('bad', 'Not connected'); return; }
-  setConn('busy', 'Syncing…');
+function restoreDashboard() {
   try {
-    S.data = await api('state');
+    const saved = JSON.parse(readSetting(LS.snapshot) || 'null');
+    if (!saved || saved.url !== S.url || saved.key !== S.key) return false;
+    const data = saved.data;
+    if (!data || !data.goals || !data.nutrition || !data.workouts || !data.expenses || !data.study ||
+        !Array.isArray(data.tasks) || !Array.isArray(data.classes) || !Array.isArray(data.foods)) return false;
+    S.data = data;
     normaliseWorkoutState(S.data);
-    saveSetting(LS.url, S.url);
-    setConn('ok', 'Connected');
     render();
+    setConn('ok', 'Saved data');
+    $('#conn-info').textContent = 'Saved dashboard · checking for updates';
+    return true;
+  } catch (e) { S.data = null; return false; }
+}
+
+let loadSequence = 0;
+async function load(options) {
+  if (!S.url) { setConn('bad', 'Not connected'); return; }
+  const background = !!(options && options.background && S.data);
+  const sequence = ++loadSequence;
+  const url = S.url, key = S.key;
+  if (!background) setConn('busy', 'Syncing…');
+  try {
+    const data = await api('state');
+    if (sequence !== loadSequence || url !== S.url || key !== S.key) return;
+    S.data = data;
+    normaliseWorkoutState(S.data);
+    render();
+    saveSetting(LS.url, S.url);
+    saveSetting(LS.snapshot, JSON.stringify({ url, key, savedAt: Date.now(), data: S.data }));
+    setConn('ok', 'Connected');
     $('#conn-info').textContent = 'Connected · ' + (S.data.goals.currency || '');
-    // Reminders are derived from state, so every sync rebuilds the schedule.
     syncNotifications();
   } catch (e) {
-    setConn('bad', 'Connection failed');
-    $('#conn-info').textContent = 'Error: ' + e.message;
-    toast(e.message, 'err');
+    if (sequence !== loadSequence || url !== S.url || key !== S.key) return;
+    setConn('bad', S.data ? 'Saved data · offline' : 'Connection failed');
+    $('#conn-info').textContent = (S.data ? 'Showing saved dashboard. ' : '') + 'Error: ' + e.message;
+    if (!background) toast(e.message, 'err');
   }
 }
 
@@ -2116,6 +2140,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   renderNotifyStatus(null);
 
-  if (S.url) await load();
+  if (S.url) {
+    const restored = restoreDashboard();
+    await load({ background: restored });
+  }
   else { switchTab('today'); $('#settings-modal').classList.remove('hidden'); }
 });
