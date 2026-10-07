@@ -3,6 +3,17 @@
    Talks to the Apps Script JSON API. No secrets live in this file.
    ========================================================================== */
 
+// This site's backend is available even on a fresh browser or after storage is cleared.
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwpVei2PcSBquSnhTVqopCOqQ5gts0g8cm68TNXcjcz4S_Pdm6_64Cx9OikgtDz_PRM/exec';
+
+function readSetting(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+
+function saveSetting(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) { /* Use current settings when storage is unavailable. */ }
+}
+
 const LS = {
   url: 'gt.apiUrl',
   key: 'gt.appKey',
@@ -10,8 +21,8 @@ const LS = {
 };
 
 const S = {
-  url: localStorage.getItem(LS.url) || '',
-  key: localStorage.getItem(LS.key) || '',
+  url: readSetting(LS.url) || DEFAULT_API_URL,
+  key: readSetting(LS.key) || '',
   data: null,
   parsed: [],          // foods staged for logging
   photo: null,         // downscaled meal photo (data URL) staged for parse.image
@@ -83,7 +94,7 @@ async function load() {
   try {
     S.data = await api('state');
     normaliseWorkoutState(S.data);
-    localStorage.setItem(LS.url, S.url);
+    saveSetting(LS.url, S.url);
     setConn('ok', 'Connected');
     render();
     $('#conn-info').textContent = 'Connected · ' + (S.data.goals.currency || '');
@@ -480,7 +491,7 @@ function saveMarks(set) {
 
 /** Default ON: only the blocks the user ticked should remind them. */
 function notifyOnlyMarked() {
-  const v = localStorage.getItem(LS_CAL.only);
+  const v = readSetting(LS_CAL.only);
   return v === null ? true : v === '1';
 }
 
@@ -1529,7 +1540,7 @@ function switchTab(name) {
   // Activity-bar icons carry data-tab; keep every row in sync with the panel.
   $$('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $$('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'panel-' + name));
-  localStorage.setItem(LS.tab, name);
+  saveSetting(LS.tab, name);
   if (S.data) drawCharts(S.data);
 }
 
@@ -1568,8 +1579,8 @@ function bind() {
     } catch (e) { toast('Enter a Google Apps Script web app URL ending in /exec', 'warn'); return; }
     S.url = nextUrl;
     S.key = $('#api-key-input').value.trim();
-    localStorage.setItem(LS.url, S.url);
-    localStorage.setItem(LS.key, S.key);
+    saveSetting(LS.url, S.url);
+    saveSetting(LS.key, S.key);
     $('#settings-modal').classList.add('hidden');
     await load();
   });
@@ -1977,7 +1988,7 @@ const N = () => (typeof TPNotify !== 'undefined' ? TPNotify : null);
 
 function notifyEnabled() {
   const n = N();
-  return !!n && n.supported() && n.permission() === 'granted' && localStorage.getItem(n.LS_NOTIFY.on) !== '0';
+  return !!n && n.supported() && n.permission() === 'granted' && readSetting(n.LS_NOTIFY.on) !== '0';
 }
 
 /** Paint the settings panel so it always reflects real permission state. */
@@ -2086,7 +2097,7 @@ async function sendTestNotification() {
 document.addEventListener('DOMContentLoaded', async () => {
   lucide.createIcons();
   bind();
-  switchTab(localStorage.getItem(LS.tab) || 'today');
+  switchTab(readSetting(LS.tab) || 'today');
 
   const now = new Date();
   $('#current-date').textContent = now.toLocaleDateString('en-US',

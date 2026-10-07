@@ -27,6 +27,58 @@ let count = 0;
 function test(name, fn) { fn(); count++; console.log('✓ ' + name); }
 
 async function main() {
+  async function boot(savedUrl, blockedStorage) {
+    const page = new JSDOM(fs.readFileSync(path.join(web, 'index.html'), 'utf8'), {
+      url: 'http://localhost/', runScripts: 'outside-only'
+    });
+    const window = page.window;
+    if (savedUrl) window.localStorage.setItem('gt.apiUrl', savedUrl);
+    if (blockedStorage) Object.defineProperty(window, 'localStorage', { get() { throw new Error('Storage blocked'); } });
+    const calls = [];
+    window.lucide = { createIcons() {} };
+    window.fetch = async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) });
+      return { ok: true, json: async () => ({ ok: true, goals: { currency: 'toman' } }) };
+    };
+    const ctx = page.getInternalVMContext();
+    vm.runInContext(fs.readFileSync(path.join(web, 'bodymap.js'), 'utf8'), ctx);
+    vm.runInContext(fs.readFileSync(path.join(web, 'app.js'), 'utf8'), ctx);
+    // Isolate connection boot from chart rendering, which other tests cover.
+    vm.runInContext('render = () => {};', ctx);
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    const result = {
+      calls,
+      modalHidden: window.document.getElementById('settings-modal').classList.contains('hidden'),
+      status: window.document.getElementById('live-indicator').textContent,
+      saved: blockedStorage ? null : window.localStorage.getItem('gt.apiUrl')
+    };
+    window.close();
+    return result;
+  }
+  const freshBoot = await boot();
+  test('fresh browser automatically connects and remembers the default endpoint', () => {
+    assert.equal(freshBoot.calls[0].body.action, 'state');
+    assert.equal(freshBoot.calls[0].url, run('DEFAULT_API_URL'));
+    assert.equal(freshBoot.saved, freshBoot.calls[0].url);
+    assert.equal(freshBoot.modalHidden, true);
+    assert.equal(freshBoot.status, 'Connected');
+  });
+  const refreshed = await boot(freshBoot.saved);
+  test('refresh reconnects to the remembered endpoint without opening Settings', () => {
+    assert.equal(refreshed.calls[0].url, freshBoot.saved);
+    assert.equal(refreshed.modalHidden, true);
+    assert.equal(refreshed.status, 'Connected');
+  });
+  const custom = await boot('https://script.google.com/macros/s/custom/exec');
+  test('user-saved endpoint overrides the site default', () => {
+    assert.equal(custom.calls[0].url, 'https://script.google.com/macros/s/custom/exec');
+  });
+  const blocked = await boot(null, true);
+  test('unavailable browser storage still permits automatic connection', () => {
+    assert.equal(blocked.calls[0].url, run('DEFAULT_API_URL'));
+    assert.equal(blocked.status, 'Connected');
+    assert.equal(blocked.modalHidden, true);
+  });
   // Let the real DOMContentLoaded handler wire all controls.
   await new Promise(resolve => w.setTimeout(resolve, 0));
   run(`S.data = {
