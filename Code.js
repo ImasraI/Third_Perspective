@@ -1018,8 +1018,7 @@ function workoutState() {
 
     // Old rows have no stored load. Rather than show them as untrained, derive
     // an estimate from the raw exercise text so history still colours correctly.
-    const derived = workoutRecs().find(function (r) { return r.rowId === i + 1; });
-    const load = storedLoad || (derived && d ? deriveRowLoad(derived, d) : null);
+    const load = storedLoad || (d ? deriveRowLoad(rec, d) : null);
     if (load) {
       if (!byDay[d]) byDay[d] = {};
       Object.keys(load).forEach(function (m) {
@@ -1497,7 +1496,11 @@ function classState() {
   const out = [];
   for (let i = rows.length - 1; i >= 1; i--) {
     if (!rows[i][2]) continue;
-    out.push({ rowId: i + 1, day: rows[i][0], time: rows[i][1], subject: rows[i][2], room: rows[i][3] || '' });
+    const notes = String(rows[i][4] || '');
+    let metadata = {};
+    try { metadata = JSON.parse(notes) || {}; } catch (e) { /* Legacy free-form notes. */ }
+    out.push({ rowId: i + 1, day: rows[i][0], time: rows[i][1], subject: rows[i][2], room: rows[i][3] || '',
+      date: metadata.date || '', repeat: metadata.repeat || 'weekly', endTime: metadata.endTime || '', color: metadata.color || 'cyan' });
   }
   return out;
 }
@@ -2290,15 +2293,19 @@ function logStudy(req) {
 function editWorkout(req) {
   const row = num(req.rowId);
   const sheet = getSheet(SHEETS.WORKOUTS);
-  if (row < 2 || row > sheet.getLastRow()) return { ok: false, error: 'Bad rowId' };
+  if (!Number.isInteger(row) || row < 2 || row > sheet.getLastRow()) return { ok: false, error: 'Bad rowId' };
 
   const updates = [];
   if (String(req.name || '').trim() !== '') updates.push([3, String(req.name).trim() || 'Workout']);
   if (String(req.exercises || '').trim() !== '') updates.push([4, String(req.exercises).trim()]);
-  if (typeof req.durationMin === 'number' && isFinite(req.durationMin)) updates.push([5, req.durationMin]);
-  if (Array.isArray(req.muscles) && req.muscles.length) {
-    const list = req.muscles.map(function (m) { return String(m).trim().toLowerCase(); }).filter(Boolean).join(',');
-    if (list) updates.push([6, list]);
+  if (req.durationMin !== undefined) {
+    if (!Number.isFinite(req.durationMin) || req.durationMin < 0) return { ok: false, error: 'Duration must be a non-negative number' };
+    updates.push([5, req.durationMin]);
+  }
+  if (req.muscles !== undefined) {
+    const muscles = normaliseMuscles(req.muscles);
+    if (!muscles.length) return { ok: false, error: 'Pick at least one muscle group' };
+    updates.push([6, muscles.join(',')]);
   }
   if (!updates.length) return { ok: false, error: 'Nothing to edit' };
 
@@ -2306,6 +2313,15 @@ function editWorkout(req) {
   updates.forEach(function (u) {
     sheet.getRange(row, u[0], 1, 1).setValue(u[1]);
   });
+  if (req.exercises !== undefined || req.muscles !== undefined || req.durationMin !== undefined) {
+    const rec = {
+      exercises: sheet.getRange(row, 4).getValue(),
+      muscles: normaliseMuscles(splitList(sheet.getRange(row, 6).getValue()))
+    };
+    const load = deriveRowLoad(rec, '') || {};
+    const loadCol = columnIndex(sheet, SHEETS.WORKOUTS, 'Muscle Load (JSON)');
+    if (loadCol !== -1) sheet.getRange(row, loadCol + 1).setValue(JSON.stringify(load));
+  }
   SpreadsheetApp.flush();
 
   return { ok: true, rowId: row, state: workoutState() };
@@ -2320,7 +2336,7 @@ function addTask(req) {
 function toggleTask(req) {
   const sheet = getSheet(SHEETS.TASKS);
   const row = num(req.rowId);
-  if (row < 2 || row > sheet.getLastRow()) return { ok: false, error: 'Bad rowId' };
+  if (!Number.isInteger(row) || row < 2 || row > sheet.getLastRow()) return { ok: false, error: 'Bad rowId' };
   const done = sheet.getRange(row, 4).getValue() === 'Completed';
   sheet.getRange(row, 4).setValue(done ? 'Pending' : 'Completed');
   sheet.getRange(row, 5).setValue(done ? '' : todayStr());
@@ -2336,7 +2352,7 @@ function addClass(req) {
 function deleteRow(sheetName, rowId) {
   const sheet = getSheet(sheetName);
   const row = num(rowId);
-  if (row < 2 || row > sheet.getLastRow()) return { ok: false, error: 'Bad rowId' };
+  if (!Number.isInteger(row) || row < 2 || row > sheet.getLastRow()) return { ok: false, error: 'Bad rowId' };
   sheet.deleteRow(row);
   return { ok: true, sheet: sheetName };
 }
@@ -2588,7 +2604,7 @@ function logFood(req) {
 function editFood(req) {
   const row = num(req.rowId);
   const sheet = getSheet(SHEETS.NUTRITION);
-  if (row < 2 || row > sheet.getLastRow()) return { ok: false, error: 'Bad rowId' };
+  if (!Number.isInteger(row) || row < 2 || row > sheet.getLastRow()) return { ok: false, error: 'Bad rowId' };
   const food = String(req.food || '').trim();
   if (!food) return { ok: false, error: 'Food name required' };
 

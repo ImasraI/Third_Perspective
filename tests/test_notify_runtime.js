@@ -251,6 +251,9 @@ async function test(name, fn) {
     await m.disable();
     assert.strictEqual(m.state.plan.length, 0);
     assert.strictEqual(m.state.timer, null);
+    const afterRefresh = await m.reschedule(state);
+    assert.strictEqual(afterRefresh.scheduled, 0, 'sync re-enabled disabled reminders');
+    assert.strictEqual(m.state.timer, null);
     return m;
   });
 

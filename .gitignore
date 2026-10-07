@@ -1,0 +1,11 @@
+# Secrets — never commit real credentials
+.env
+.env.local
+.env.*.local
+
+# Keep the placeholder file tracked
+!.env.example
+
+# Dependencies and local preview files
+node_modules/
+web/_bmtest.html

@@ -311,7 +311,23 @@ function buildPlan(state, now, opts) {
   /* --- Classes: weekly recurrence, N minutes before the bell. */
   for (const c of state.classes || []) {
     if (onlyMarked && !markedClasses.has(Number(c.rowId))) continue;
-    const when = untilNextWeekly(c.day, c.time, base);
+    let when;
+    if (c.repeat && c.repeat !== 'weekly') {
+      const clock = parseClock(c.time);
+      if (clock == null) continue;
+      for (let offset = 0; offset < 63; offset++) {
+        const candidate = new Date(base);
+        candidate.setDate(candidate.getDate() + offset);
+        candidate.setHours(clock.hours, clock.minutes, 0, 0);
+        const bucket = candidate.getFullYear() + '-' + String(candidate.getMonth() + 1).padStart(2, '0') + '-' + String(candidate.getDate()).padStart(2, '0');
+        if (c.date && bucket < c.date) continue;
+        const matches = c.repeat === 'daily' || (c.repeat === 'never' && bucket === c.date) ||
+          (c.repeat === 'monthly' && c.date && candidate.getDate() === Number(c.date.slice(8, 10)));
+        if (matches && candidate.getTime() - leadMs > base.getTime()) { when = candidate; break; }
+      }
+    } else {
+      when = untilNextWeekly(c.day, c.time, base);
+    }
     if (!when) continue;
     const at = new Date(when.getTime() - leadMs);
     if (at.getTime() <= base.getTime()) continue;
@@ -629,6 +645,10 @@ async function armTriggers(items) {
  */
 async function reschedule(state, options) {
   rt.opts = options || rt.opts;
+  if (typeof localStorage !== 'undefined' && localStorage.getItem(LS_NOTIFY.on) === '0') {
+    await disable();
+    return { scheduled: 0, reason: 'disabled' };
+  }
   if (!supported() || permission() !== 'granted') {
     rt.plan = [];
     return { scheduled: 0, reason: permission() };

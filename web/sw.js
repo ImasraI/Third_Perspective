@@ -6,7 +6,7 @@
    up on the very next load — the old stale-while-revalidate copy kept serving a
    broken app.js (dead buttons) on devices that had already visited the site.
    The cache is only the offline fallback now. */
-const CACHE_NAME = 'thirdperspective-v6';
+const CACHE_NAME = 'thirdperspective-v8';
 const ASSETS = [
   './',
   './index.html',
@@ -26,7 +26,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      Promise.all(keys.filter((k) => k.startsWith('thirdperspective-') && k !== CACHE_NAME).map((k) => caches.delete(k))))
   );
   self.clients.claim();
 });
@@ -38,7 +38,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
 
   // The Apps Script backend must always hit the network, untouched.
-  if (url.includes('script.google.com') || url.includes('googleusercontent.com')) return;
+  if (url.hostname === 'script.google.com' || url.hostname.endsWith('.googleusercontent.com')) return;
   // Third-party CDNs (fonts, Tailwind, Chart.js, lucide) are not ours to cache.
   if (url.origin !== self.location.origin) return;
 

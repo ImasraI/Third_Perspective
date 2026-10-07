@@ -49,14 +49,16 @@ function toast(msg, kind) {
 // needed and Apps Script's ContentService answers work from any origin.
 async function api(action, payload) {
   if (!S.url) throw new Error('No backend URL — open Settings first');
-  const body = Object.assign({ action: action, appKey: S.key }, payload || {});
+  const body = Object.assign({}, payload || {}, { action: action, appKey: S.key });
   const res = await fetch(S.url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
-  const json = await res.json();
+  let json;
+  try { json = await res.json(); }
+  catch (e) { throw new Error('Backend did not return JSON. Check the Apps Script deployment URL and access settings.'); }
   if (json.ok === false) throw new Error(json.error || 'Request failed');
   return json;
 }
@@ -80,6 +82,7 @@ async function load() {
   setConn('busy', 'Syncing…');
   try {
     S.data = await api('state');
+    normaliseWorkoutState(S.data);
     localStorage.setItem(LS.url, S.url);
     setConn('ok', 'Connected');
     render();
@@ -91,6 +94,21 @@ async function load() {
     $('#conn-info').textContent = 'Error: ' + e.message;
     toast(e.message, 'err');
   }
+}
+
+/** Accept older Apps Script deployments that used a single shoulders group. */
+function normaliseWorkoutState(data) {
+  if (!data.workouts) return;
+  const status = data.workouts.muscleStatus || {};
+  const normalised = {};
+  Object.keys(MUSCLE_LABELS).forEach(m => {
+    normalised[m] = status[m] || (m.endsWith('-delts') ? status.shoulders : null) ||
+      { level: 0, daysAgo: null, sessions7d: 0 };
+  });
+  data.workouts.muscleStatus = normalised;
+  (data.workouts.recent || []).forEach(w => {
+    w.muscles = [...new Set((w.muscles || []).flatMap(m => m === 'shoulders' ? ['front-delts', 'side-delts', 'rear-delts'] : [m]))];
+  });
 }
 
 function refreshSoon() { setTimeout(load, 120); }
@@ -205,8 +223,6 @@ function renderFoodLog(d) {
         ${rowDelete('Nutrition', x.rowId)}
       </div>
     </div>`).join('');
-  // Give each parsed item a back-reference to its sheet row id.
-  S.parsed.forEach(function (i, idx) { if (!i._rowId) i._rowId = d.nutrition.recent[idx] && d.nutrition.recent[idx].rowId; });
 }
 
 function renderLibrary(d) {
@@ -304,14 +320,9 @@ function renderWorkoutLog(d) {
         <button class="icon-btn btn-sm workout-edit-btn" data-edit-sheet="Workouts" data-edit-row="${w.rowId}" title="Edit workout">
           <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
         </button>
-        <button class="icon-btn btn-sm" data-edit-workout="${w.rowId}" title="Edit workout">
-          <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
-        </button>
         ${rowDelete('Workouts', w.rowId)}
       </div>
     </div>`).join('');
-  // Give each workout object a back-reference to its sheet row id.
-  d.workouts.recent.forEach(function (w, idx) { if (!w._rowId) w._rowId = w.rowId; });
 }
 
 function renderExpenses(d) {
@@ -524,7 +535,9 @@ function renderCalendar() {
     $('#cal-day-view').classList.add('hidden');
     renderMonthGrid(today, start, end);
   } else if (view === 'week') {
-    const label = start ? dayName(start.getDay()) + ' ' + (start.getMonth()+1) + '/' + start.getDate() + ' - ' + (end ? end.getMonth()+1 : '') + '/' + (end ? end.getDate() : '') : 'Week';
+    const weekFrom = weekStart(start || today, 1);
+    const weekTo = weekEnd(weekFrom);
+    const label = fmtDate(weekFrom) + ' – ' + fmtDate(weekTo);
     title.textContent = label;
     $('#cal-grid').classList.add('hidden');
     $('#cal-list-view').classList.remove('hidden');
@@ -546,8 +559,8 @@ const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const DAY_NAMES_FULL = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const MEMORY = {};
 
-function dayName(d) { return DAY_NAMES[d]; }
-function dayNameFull(d) { return DAY_NAMES_FULL[d]; }
+function dayName(d) { return DAY_NAMES[(d + 6) % 7]; }
+function dayNameFull(d) { return DAY_NAMES_FULL[(d.getDay() + 6) % 7]; }
 function weekStart(d, firstDay) { // Monday-based week start
   const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const day = copy.getDay();
@@ -575,7 +588,11 @@ function classesForDate(d) {
   const bucket = dayBucket(d);
   const name = DAY_NAMES_FULL[(d.getDay() + 6) % 7].toLowerCase(); // Monday-based
   return classes.filter(function (c) {
-    if (c.date && c.date === bucket) return true;
+    if (c.date && bucket < c.date) return false;
+    if (c.repeat === 'never') return c.date === bucket;
+    if (c.repeat === 'daily') return true;
+    if (c.repeat === 'monthly') return !!c.date && Number(c.date.slice(8, 10)) === d.getDate();
+    if (c.date && !c.repeat) return c.date === bucket;
     if (!c.day) return false;
     const day = String(c.day).toLowerCase();
     return day === name || day.slice(0, 3) === name.slice(0, 3);
@@ -606,81 +623,27 @@ function activeClassOn(date, time) {
   return best;
 }
 
-function renderMonthGrid(today, start, end) {
+function renderMonthGrid(today, start) {
   const body = $('#cal-grid-body');
-  const year = start.getFullYear();
-  const month = start.getMonth();
-  const first = new Date(year, month, 1);
-  const startDay = first.getDay(); // 0=Sun
-  const rows = Math.ceil((startDay + monthEnd(start).getDate()) / 7);
-  const cols = 7;
-  const cells = rows * cols;
-  const totalDays = monthEnd(start).getDate() + startDay;
-  const cellsMap = {};
-  for (let i = 0; i < totalDays; i++) {
-    const d = new Date(year, month, i - startDay + 1);
-    cellsMap[i] = d;
+  const first = monthStart(start);
+  const offset = (first.getDay() + 6) % 7;
+  const count = Math.ceil((offset + monthEnd(start).getDate()) / 7) * 7;
+  const marks = readMarks();
+  let html = '<div class="grid grid-cols-7 gap-px">';
+  for (let i = 0; i < count; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), i - offset + 1);
+    html += '<div class="bg-slate-800/60 p-1 rounded-lg min-w-0' + (d.getMonth() !== start.getMonth() ? ' opacity-40' : '') + '" data-date="' + dayBucket(d) + '">' +
+      '<div class="text-[11px] font-semibold' + (isSameDay(d, today) ? ' text-brand-cyan' : ' text-slate-400') + '">' + d.getDate() + '</div>' +
+      classesForDate(d).map(c => '<div class="calendar-event text-[10px] truncate" data-cal-mark="' + c.rowId + '">' +
+        (marks.has(Number(c.rowId)) ? '<span class="cal-mark-dot"></span>' : '') + esc(c.subject) + '</div>').join('') + '</div>';
   }
-
-  const classes = S.data.classes || [];
-
-  // Weekdays first, then weekend rows.
-  const weekdayCount = startDay <= 5 ? 5 - startDay + 1 : 0;
-  const weekendCount = cells - weekdayCount;
-
-  let html = '';
-  // Weekday rows
-  const wdRows = Math.ceil(weekdayCount / 7);
-  for (let r = 0; r < wdRows; r++) {
-    html += '<div class="grid grid-cols-7 gap-px bg-slate-800/40 rounded-lg overflow-hidden">';
-    for (let c = 0; c < 7; c++) {
-      const i = r * 7 + c;
-      if (i >= weekdayCount) break;
-      const d = cellsMap[i];
-      const active = isSameDay(d, today);
-      const isToday = isSameDay(d, today);
-      html += '<div class="bg-slate-800/60 p-1 text-center rounded-t-lg">';
-      html += '<div class="text-[11px] font-semibold uppercase text-slate-400">' + d.getDate() + '</div>';
-      const dayClasses = classesForDate(d);
-      html += '<div class="space-y-0.5">' + dayClasses.map(c => {
-        const col = COLORS[c.color] || '#64748b';
-        const mk = readMarks().has(Number(c.rowId)) ? '<span class="cal-mark-dot" title="Reminder on"></span>' : '';
-        return '<div class="calendar-event' + (mk ? ' cal-block-marked' : '') + '" data-cal-mark="' + c.rowId + '" style="border-left:3px solid ' + col + ';background:rgba(206,145,120,0.10);color:#e2e8f0;padding:2px 4px;border-radius:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + mk + esc(c.subject) + '</div>';
-      }).join('') + '</div>';
-      html += '</div>';
-    }
-    html += '</div>';
-  }
-  // Weekend rows
-  const startWeekend = weekdayCount;
-  const weRows = Math.ceil(weekendCount / 7);
-  for (let r = 0; r < weRows; r++) {
-    html += '<div class="grid grid-cols-7 gap-px bg-slate-800/40 rounded-lg overflow-hidden">';
-    for (let c = 0; c < 7; c++) {
-      const i = startWeekend + r * 7 + c;
-      if (i >= cells) break;
-      const d = cellsMap[i];
-      const active = isSameDay(d, today);
-      const isToday = isSameDay(d, today);
-      html += '<div class="bg-slate-800/60 p-1 text-center rounded-t-lg">';
-      html += '<div class="text-[11px] font-semibold uppercase text-slate-400">' + d.getDate() + '</div>';
-      const dayClasses = classesForDate(d);
-      html += '<div class="space-y-0.5">' + dayClasses.map(c => {
-        const col = COLORS[c.color] || '#64748b';
-        const mk = readMarks().has(Number(c.rowId)) ? '<span class="cal-mark-dot" title="Reminder on"></span>' : '';
-        return '<div class="calendar-event' + (mk ? ' cal-block-marked' : '') + '" data-cal-mark="' + c.rowId + '" style="border-left:3px solid ' + col + ';background:rgba(206,145,120,0.10);color:#e2e8f0;padding:2px 4px;border-radius:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + mk + esc(c.subject) + '</div>';
-      }).join('') + '</div>';
-      html += '</div>';
-    }
-    html += '</div>';
-  }
-  body.innerHTML = html;
+  body.innerHTML = html + '</div>';
 }
 
 function renderWeekList(today, start, end) {
   const el = $('#cal-list');
   const days = [];
-  const s = start ? new Date(start) : weekStart(today, 1);
+  const s = weekStart(start || today, 1);
   const e = end ? new Date(end) : weekEnd(s);
   while (s <= e) { days.push(new Date(s)); s.setDate(s.getDate() + 1); }
   const marks = readMarks();
@@ -735,7 +698,7 @@ function renderDayView(today, start, end) {
       '</div>' +
       '</div>' +
       '<div class="text-[11px] text-slate-500">' + esc(c.room || '') + ' · ' + esc(c.time) + (c.endTime ? ' - ' + c.endTime : '') + '</div>' +
-      '<div class="text-[11px] text-slate-400">' + (c.repeat === 'daily' ? 'Every day' : c.repeat === 'weekly' ? 'Every week' : c.repeat === 'monthly' ? 'Every month' : 'Once') + '</div>' +
+      '<div class="text-[11px] text-slate-400">' + (c.repeat === 'daily' ? 'Every day' : (!c.repeat || c.repeat === 'weekly') ? 'Every week' : c.repeat === 'monthly' ? 'Every month' : 'Once') + '</div>' +
       '<div class="mt-1">' + (c.color === 'cyan' ? '<span class="w-3 h-3 rounded-full" style="background:#22d3ee"></span>' : c.color === 'purple' ? '<span class="w-3 h-3 rounded-full" style="background:#a855f7"></span>' : c.color === 'green' ? '<span class="w-3 h-3 rounded-full" style="background:#22c55e"></span>' : c.color === 'orange' ? '<span class="w-3 h-3 rounded-full" style="background:#fb923c"></span>' : c.color === 'pink' ? '<span class="w-3 h-3 rounded-full" style="background:#ec4899"></span>' : c.color === 'amber' ? '<span class="w-3 h-3 rounded-full" style="background:#f59e0b"></span>' : c.color === 'red' ? '<span class="w-3 h-3 rounded-full" style="background:#ef4444"></span>' : '<span class="w-3 h-3 rounded-full" style="background:#64748b"></span>') + '</div>' +
       '<div class="mt-2 text-[11px] text-slate-400">rowId ' + c.rowId + '</div>' +
       '</div>';
@@ -743,14 +706,14 @@ function renderDayView(today, start, end) {
 }
 
 function renderGoals(d) {
-  if ($('#g-cal').dataset.touched) return;
-  $('#g-cal').value = d.goals.calories;
-  $('#g-pro').value = d.goals.protein;
-  $('#g-carb').value = d.goals.carbs;
-  $('#g-fat').value = d.goals.fat;
-  $('#g-study').value = d.goals.studyMinutes;
-  $('#g-budget').value = d.goals.monthBudget;
-  $('#g-currency').value = d.goals.currency || '';
+
+  if (!$('#g-cal').dataset.touched) $('#g-cal').value = d.goals.calories;
+  if (!$('#g-pro').dataset.touched) $('#g-pro').value = d.goals.protein;
+  if (!$('#g-carb').dataset.touched) $('#g-carb').value = d.goals.carbs;
+  if (!$('#g-fat').dataset.touched) $('#g-fat').value = d.goals.fat;
+  if (!$('#g-study').dataset.touched) $('#g-study').value = d.goals.studyMinutes;
+  if (!$('#g-budget').dataset.touched) $('#g-budget').value = d.goals.monthBudget;
+  if (!$('#g-currency').dataset.touched) $('#g-currency').value = d.goals.currency || '';
 }
 
 function drawCharts(d) {
@@ -1073,7 +1036,7 @@ async function parseFood() {
     const r = await api('parse', { text: text });
     if (r.kind !== 'food' || !r.foods || !r.foods.length) {
       if (r.kind === 'workout') {
-        toast('That looks like a workout — logged in the Body tab instead', 'warn');
+        toast('That looks like a workout — review it in the Body tab', 'warn');
         switchTab('body');
         $('#wk-input').value = text;
         return;
@@ -1242,14 +1205,14 @@ function onWkPhotoPicked(e) {
 function renderWkEstimate(r) {
   const box = $('#wk-estimated-box');
   box.classList.remove('hidden');
-  const muscles = r.muscles || [];
+  const muscles = (r.muscles || []).filter(m => Object.prototype.hasOwnProperty.call(MUSCLE_LABELS, m));
   const effort = r.effort || [];
   const effortByMuscle = {};
   (effort || []).forEach(function (e) { effortByMuscle[e.muscle] = e.level; });
   const names = MUSCLE_LABELS || {};
   box.innerHTML = muscles.map(function (m) {
     const lvl = effortByMuscle[m] || 0;
-    const effClass = lvl === 0 ? 'none' : 'bm-effort-' + Math.min(5, lvl);
+    const effClass = lvl === 0 ? 'none' : 'bm-effort-' + Math.min(4, lvl);
     return `<div class="flex items-center gap-2">
       <span class="chip ${lvl === 0 ? 'hidden' : ''}" data-mus="${m}">${names[m] || m} <span class="bm-effort-dot ${effClass}" title="Effort ${lvl}/4"></span></span>
       <span class="text-[11px] text-slate-500">${lvl === 0 ? 'not trained' : lvl === 1 ? 'light' : lvl === 2 ? 'moderate' : lvl === 3 ? 'hard' : 'maximal'}</span>
@@ -1258,7 +1221,7 @@ function renderWkEstimate(r) {
   $('#wk-estimated-box').classList.remove('hidden');
   $('#wk-estimated-box').innerHTML = box.innerHTML;
   // Seed the toggle set so the Save button logs the estimated muscles.
-  S.workoutEditMuscles = new Set(muscles.filter(function (m) { return effortByMuscle[m] > 0; }));
+  S.muscles = new Set(muscles.filter(function (m) { return effortByMuscle[m] > 0; }));
   // Mirror chips into the workout form too.
   const form = $('#wk-muscles');
   form.innerHTML = muscles.map(function (m) {
@@ -1268,7 +1231,7 @@ function renderWkEstimate(r) {
   // Mirror effort dots into the workout form where they are rendered later.
   $('#wk-muscles').querySelectorAll('[data-mus]').forEach(function (chip) {
     const lvl = effortByMuscle[chip.dataset.mus] || 0;
-    const dot = lvl === 0 ? 'none' : 'bm-effort-' + Math.min(5, lvl);
+    const dot = lvl === 0 ? 'none' : 'bm-effort-' + Math.min(4, lvl);
     chip.innerHTML += ` <span class="bm-effort-dot ${dot}"></span>`;
   });
   const conf = r.confidence ? ' · confidence ' + r.confidence.toFixed(2) : '';
@@ -1384,7 +1347,7 @@ async function saveFoodEdit() {
     if (isFinite(carbs)) body.carbs = carbs;
     const fat = parseFloat($('#food-edit-fat').value);
     if (isFinite(fat)) body.fat = fat;
-    if (!Object.keys(body).length > 1) { toast('Nothing to change', 'warn'); return; }
+    if (Object.keys(body).length <= 1) { toast('Nothing to change', 'warn'); return; }
     await api('edit.food', body);
     // Sync the whole sheet back into state so the rings update.
     await load();
@@ -1407,13 +1370,9 @@ function openWorkoutEdit() {
   $('#workout-edit-name').value = ed.orig.name;
   $('#workout-edit-dur').value = ed.orig.durationMin;
   $('#workout-edit-ex').value = ed.orig.exercises;
-  // Rebuild chips from the DB muscles so the edit panel mirrors what is saved.
-  $('#workout-edit-muscles').innerHTML = (ed.orig.muscles || []).map(m =>
-    `<span class="chip" data-mus="${m}">${MUSCLE_EMOJI[m] || ''} ${MUSCLE_LABELS[m]}</span>`).join('');
-  // Seed the toggle set from the loaded chips, respecting `on` class.
-  $('#workout-edit-muscles').querySelectorAll('[data-mus]').forEach(function (chip) {
-    if (chip.classList.contains('on')) S.workoutEditMuscles.add(chip.dataset.mus);
-  });
+  S.workoutEditMuscles = new Set(ed.orig.muscles || []);
+  $('#workout-edit-muscles').innerHTML = Object.keys(MUSCLE_LABELS).map(m =>
+    `<button type="button" class="chip ${S.workoutEditMuscles.has(m) ? 'on' : ''}" data-mus="${m}">${MUSCLE_LABELS[m]}</button>`).join('');
   $('#workout-edit-save').onclick = () => saveWorkoutEdit();
   $('#workout-edit-clear').onclick = () => { closeWorkoutEdit(); };
   $('#workout-edit-cancel').onclick = () => { closeWorkoutEdit(); };
@@ -1441,8 +1400,9 @@ async function saveWorkoutEdit() {
     if (ex) body.exercises = ex;
     // Muscle groups: chips are toggled client-side into S.workoutEditMuscles
     const muscles = Array.from(S.workoutEditMuscles || new Set());
-    if (muscles.length) body.muscles = muscles;
-    if (!Object.keys(body).length > 1) { toast('Nothing to change', 'warn'); return; }
+    if (!muscles.length) { toast('Pick at least one muscle group', 'warn'); return; }
+    body.muscles = muscles;
+    if (Object.keys(body).length <= 1) { toast('Nothing to change', 'warn'); return; }
     await api('edit.workout', body);
     // Sync the whole sheet back into state so the rings + muscle map update.
     await load();
@@ -1503,7 +1463,7 @@ function buildMuscleChips() {
 
 function toggleMuscle(m) {
   if (S.muscles.has(m)) S.muscles.delete(m); else S.muscles.add(m);
-  document.querySelector(`[data-mus="${m}"]`).classList.toggle('on', S.muscles.has(m));
+  $('#wk-muscles').querySelector(`[data-mus="${m}"]`).classList.toggle('on', S.muscles.has(m));
 }
 
 /** Move a muscle toggle between the workout log form and an edit panel. */
@@ -1527,8 +1487,8 @@ async function autoDetectWorkout() {
     const r = await api('parse', { text: text });
     if (r.kind === 'workout') {
       S.muscles.clear();
-      (r.muscles || []).forEach(m => S.muscles.add(m));
-      document.querySelectorAll('[data-mus]').forEach(c =>
+      (r.muscles || []).flatMap(m => m === 'shoulders' ? ['front-delts', 'side-delts', 'rear-delts'] : [m]).filter(m => MUSCLE_LABELS[m]).forEach(m => S.muscles.add(m));
+      $('#wk-muscles').querySelectorAll('[data-mus]').forEach(c =>
         c.classList.toggle('on', S.muscles.has(c.dataset.mus)));
       if (!$('#wk-name').value) $('#wk-name').value = r.workoutName || '';
       if (r.durationMin && !$('#wk-dur').value) $('#wk-dur').value = r.durationMin;
@@ -1565,6 +1525,7 @@ async function saveWorkout() {
    ========================================================================== */
 
 function switchTab(name) {
+  if (!document.getElementById('panel-' + name)) name = 'today';
   // Activity-bar icons carry data-tab; keep every row in sync with the panel.
   $$('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $$('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'panel-' + name));
@@ -1600,7 +1561,12 @@ function bind() {
     if (e.target.id === 'settings-modal') $('#settings-modal').classList.add('hidden');
   });
   $('#save-settings-btn').addEventListener('click', async () => {
-    S.url = $('#api-url-input').value.trim();
+    const nextUrl = $('#api-url-input').value.trim();
+    try {
+      const parsedUrl = new URL(nextUrl);
+      if (parsedUrl.protocol !== 'https:' || parsedUrl.hostname !== 'script.google.com' || !/^\/macros\/s\/[^/]+\/exec$/.test(parsedUrl.pathname)) throw new Error();
+    } catch (e) { toast('Enter a Google Apps Script web app URL ending in /exec', 'warn'); return; }
+    S.url = nextUrl;
     S.key = $('#api-key-input').value.trim();
     localStorage.setItem(LS.url, S.url);
     localStorage.setItem(LS.key, S.key);
@@ -1686,6 +1652,13 @@ function bind() {
       if (S.workoutEditPanelOpen) swapMuscleSet($('#wk-muscles'), $('#workout-edit-muscles'));
     }
   });
+  $('#workout-edit-muscles').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-mus]');
+    if (!chip) return;
+    const m = chip.dataset.mus;
+    if (S.workoutEditMuscles.has(m)) S.workoutEditMuscles.delete(m); else S.workoutEditMuscles.add(m);
+    chip.classList.toggle('on', S.workoutEditMuscles.has(m));
+  });
   $('#wk-photo').addEventListener('change', onWkPhotoPicked);
   $('#wk-photo-clear').addEventListener('click', clearWkPhoto);
   $('#wk-estimate').addEventListener('click', estimateWorkoutMuscles);
@@ -1754,7 +1727,7 @@ function bind() {
 
   $('#cal-prev').addEventListener('click', () => {
     if (S.calendar.view === 'month') {
-      S.calendar.start.setMonth(S.calendar.start.getMonth() - 1);
+      S.calendar.start = new Date(S.calendar.start.getFullYear(), S.calendar.start.getMonth() - 1, 1);
     } else if (S.calendar.view === 'week') {
       S.calendar.start.setDate(S.calendar.start.getDate() - 7);
     } else {
@@ -1765,7 +1738,7 @@ function bind() {
   });
   $('#cal-next').addEventListener('click', () => {
     if (S.calendar.view === 'month') {
-      S.calendar.start.setMonth(S.calendar.start.getMonth() + 1);
+      S.calendar.start = new Date(S.calendar.start.getFullYear(), S.calendar.start.getMonth() + 1, 1);
     } else if (S.calendar.view === 'week') {
       S.calendar.start.setDate(S.calendar.start.getDate() + 7);
     } else {
@@ -1801,24 +1774,21 @@ function bind() {
   $('#cl-save').addEventListener('click', async () => {
     if (!$('#cl-subject').value.trim()) { toast('Enter a subject', 'warn'); return; }
     try {
-      const now = new Date();
-      const tz = 'Asia/Tehran';
-      const pad = (n) => String(n).padStart(2, '0');
-      const hh = String($('#cl-time').value).split(':')[0] || '09';
-      const mm = String($('#cl-time').value).split(':')[1] || '00';
-      const date = now.toISOString().slice(0, 10);
-      const note = [];
-      if ($('#cl-repeat').value !== 'never') note.push($('#cl-repeat').value);
-      if ($('#cl-color').value !== 'cyan') note.push($('#cl-color').value);
-      if (note.length) note.push('repeat:' + note.join('|'));
-      if ($('#cl-end').value.trim()) note.push('ends:' + $('#cl-end').value.trim());
-      await api('class.add', {
+      const date = new Date();
+      const weekday = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf($('#cl-day').value);
+      date.setDate(date.getDate() + (weekday - date.getDay() + 7) % 7);
+      const metadata = { date: dayBucket(date), repeat: $('#cl-repeat').value, endTime: $('#cl-end').value.trim(), color: $('#cl-color').value };
+      const remind = $('#cl-notify').checked;
+      const saved = await api('class.add', {
         day: $('#cl-day').value,
         time: $('#cl-time').value.trim(),
         subject: $('#cl-subject').value.trim(),
         room: $('#cl-room').value.trim(),
-        notes: note.join(' ') || ''
+        notes: JSON.stringify(metadata)
       });
+      if (remind && saved.rowId) { const marks = readMarks(); marks.add(saved.rowId); saveMarks(marks); }
+      $('#cal-add-sheet').classList.add('hidden');
+      $('#cl-notify').checked = false;
       toast('Class added');
       $('#cl-subject').value = ''; $('#cl-time').value = ''; $('#cl-end').value = '';
       $('#cl-room').value = ''; $('#cl-repeat').value = 'never'; $('#cl-color').value = 'cyan';
@@ -1827,10 +1797,7 @@ function bind() {
     } catch (e) { toast(e.message, 'err'); }
   });
   $('#cl-add-cancel').addEventListener('click', () => {
-    $('#cl-add-sheet').classList.add('hidden');
-  });
-  $('#cl-add-cancel').addEventListener('click', () => {
-    $('#cl-add-sheet').classList.add('hidden');
+    $('#cal-add-sheet').classList.add('hidden');
   });
 
   // Clicking a day row in the week list opens that day's blocks.
@@ -1855,6 +1822,7 @@ function bind() {
         studyMinutes: $('#g-study').value, monthBudget: $('#g-budget').value,
         currency: $('#g-currency').value.trim()
       });
+      ['#g-cal', '#g-pro', '#g-carb', '#g-fat', '#g-study', '#g-budget', '#g-currency'].forEach(id => delete $(id).dataset.touched);
       toast('Goals updated');
       await load();
     } catch (e) { toast(e.message, 'err'); }
@@ -1892,9 +1860,9 @@ function bind() {
       const row = +edit.dataset.editRow;
       let item = null;
       if (sheet === 'Nutrition') {
-        item = S.parsed.find(i => i && i._rowId === row);
+        item = S.data && S.data.nutrition.recent.find(i => i.rowId === row);
       } else {
-        item = S.workoutEdit && S.workoutEdit.find(w => (w._rowId || 0) === row);
+        item = S.workouts.find(w => w.rowId === row);
       }
       if (!item) { toast('Could not locate this entry', 'err'); return; }
       if (sheet === 'Nutrition') {
@@ -1909,7 +1877,7 @@ function bind() {
     const editWork = e.target.closest('[data-edit-workout]');
     if (editWork) {
       const row = +editWork.dataset.editWorkout;
-      let item = S.workouts && S.workouts.recent.find(w => (w._rowId || 0) === row);
+      let item = S.workouts.find(w => w.rowId === row);
       if (!item) { toast('Could not locate this workout', 'err'); return; }
       S.workoutEdit = { rowId: row, orig: item };
       openWorkoutEdit();
@@ -2009,7 +1977,7 @@ const N = () => (typeof TPNotify !== 'undefined' ? TPNotify : null);
 
 function notifyEnabled() {
   const n = N();
-  return !!n && n.supported() && n.permission() === 'granted';
+  return !!n && n.supported() && n.permission() === 'granted' && localStorage.getItem(n.LS_NOTIFY.on) !== '0';
 }
 
 /** Paint the settings panel so it always reflects real permission state. */

@@ -1,26 +1,5 @@
-/* =============================================================================
-   bodymap.js - front/back muscle map
-   =============================================================================
-   Pure SVG. 17 tracked muscle groups, each a distinct region coloured by how
-   hard it has been trained (backend effort level 0-4), rendered as the classic
-   three-tier anatomical chart:
-
-     most used  (level 4)    -> pink
-     moderate   (level 3)    -> orange
-     least used (level 1-2)  -> yellow
-     never      (level 0)    -> plain silhouette grey
-
-   Geometry notes
-   --------------
-   Both figures share one silhouette body so the two views line up exactly.
-   The standing figure is ~7.5 heads tall (head 52 units of a 400-unit body)
-   and mirrored halves are built with pair(), which reflects a left-side
-   snippet around x=100, so every paired muscle stays perfectly symmetric.
-
-   Colour lives on the <g class="bm-region"> element via the effort class in
-   style.css; child shapes inherit it, while the white anatomical lines and
-   the card-coloured seams are declared per child so they stay crisp.
-   ==========================================================================*/
+/* Interactive front/back anatomical chart, traced as SVG regions from the
+   reference layout. Effort colors are supplied by workout data. */
 
 const MUSCLE_LABELS = {
   neck: 'Neck',
@@ -47,44 +26,230 @@ const MUSCLE_LABELS = {
 const MUSCLE_EMOJI = {};
 
 /* ---------------------------------------------------------------------------
-   Landmarks (viewBox 0 0 200 400, body axis at x=100)
-
-     head ......... y 11 - 61     (52 units = 1 head, figure is ~7.5 heads)
-     shoulder ..... y 84          outer delt at x=60
-     armpit ....... y 130
-     waist ........ y 171         x 80-120
-     hip .......... y 204         x 76-124
-     crotch ....... y 226
-     elbow ........ y 170
-     wrist ........ y 242         fingertips y 266 (mid-thigh)
-     knee ......... y 297
-     ankle ........ y 374
-     sole ......... y 394
+   Silhouette path data (left side only; pair() mirrors it)
    --------------------------------------------------------------------------- */
 
-const BODY = '#a9a6a1';   // silhouette grey
-const JOINT = '#95928d';  // hands / feet, a shade darker
-const SEAM = '#f6f4f1';   // card colour: separates regions like the reference
-const LINE = '#ffffff';   // anatomical outline lines
+const B = {
+  'head': 'M150,8 C164,8 170,17 169,31 L169,40 C167,51 160,58 150,59 C140,58 133,51 131,40 L131,31 C130,17 136,8 150,8 Z',
+  'neck': 'M137,48 L163,48 L164,64 Q167,71 178,75 L150,93 L122,75 Q133,71 136,64 Z',
+  'torso': 'M150,75 C137,73 121,75 111,85 L111,112 Q115,135 119,151 L120,172 L113,190 Q115,206 135,215 L150,230 L165,215 Q185,206 187,190 L180,172 L181,151 Q185,135 189,112 L189,85 C179,75 163,73 150,75 Z',
+  'arm': 'M113,80 C101,80 96,90 94,104 L86,126 L76,151 L65,177 L55,195 L65,201 L82,178 L92,156 L103,137 L112,117 Q124,93 113,80 Z',
+  'hand': 'M55,195 L65,201 L66,211 L74,222 L71,224 L64,217 L66,232 L63,233 L59,219 L60,237 L57,237 L54,220 L51,235 L48,233 L49,218 L44,230 L41,228 L48,212 L43,216 L40,214 L49,203 Z',
+  'leg': 'M115,185 Q131,184 150,217 L141,239 L137,272 L133,291 L135,316 L132,343 L127,369 L116,369 L106,340 Q101,316 105,291 L109,271 Q101,243 105,218 Z',
+  'foot': 'M116,365 L127,365 L126,379 Q133,391 130,397 Q119,403 110,395 L103,391 L109,379 Z'
+};
 
-/* Left-side base body paths (mirrored with pair()). */
-const P = {
-  head: 'M100,11 C110,11 117,22 117,36 C117,50 110,61 100,61 C90,61 83,50 83,36 C83,22 90,11 100,11 Z',
-  neck: 'M91,52 L109,52 L112,80 L88,80 Z',
-  torso:
-    'M100,72 C90,72 79,76 71,84 C63,91 59,101 60,113 C61,125 66,135 70,143 ' +
-    'C75,153 79,161 80,171 C81,181 80,191 78,201 C77,209 79,217 85,222 ' +
-    'C89,225 95,226 100,226 Z',
-  upperArm: 'M73,92 C66,112 62,140 60,170',
-  lowerArm: 'M60,168 C56,192 55,220 56,242',
-  hand: 'M45,231 C39,242 38,256 44,265 C51,273 60,269 61,257 L61,236 Z',
-  thigh:
-    'M100,212 C90,212 81,216 77,225 C72,237 70,252 71,268 C72,282 74,291 78,297 ' +
-    'L97,299 C99,289 100,270 100,254 Z',
-  shin:
-    'M97,300 C89,305 81,316 79,332 C77,348 79,363 84,374 L94,374 ' +
-    'C96,358 98,330 99,312 Z',
-  foot: 'M78,372 L97,372 C100,379 101,388 101,394 L75,394 C74,386 75,378 78,372 Z'
+/* ---------------------------------------------------------------------------
+   Muscle regions. Coordinates are the left half only for paired groups; the
+   shape list is concatenated in draw order so later muscles overlap earlier
+   ones the way they sit on the body.
+   --------------------------------------------------------------------------- */
+
+const FRONT = {
+  'neck': 'M136,58 Q150,69 164,58 L164,69 L150,91 L136,69 Z',
+  'traps': 'M136,65 L150,91 L123,78 Z',
+  'chest': 'M150,92 L145,77 Q129,72 117,79 L111,101 Q116,115 130,116 L150,111 Z',
+  'side-delts': 'M115,79 Q101,76 96,90 L93,109 Q106,104 113,96 Z',
+  'front-delts': 'M116,79 L123,78 L115,99 L105,108 L98,103 Q106,96 108,81 Z',
+  'biceps': 'M99,108 L109,105 L100,128 L91,141 L84,145 L83,133 L90,117 Z',
+  'forearms': 'M82,144 L90,141 L82,166 L64,197 L58,194 L69,167 Z',
+  'obliques': 'M114,115 L129,117 L132,155 L119,159 L118,139 Z',
+  'abs1': 'M150,109 Q139,107 132,119 L132,130 Q141,124 150,126 Z',
+  'abs2': 'M132,132 Q141,126 150,129 L150,143 Q140,140 132,145 Z',
+  'abs3': 'M132,147 Q140,142 150,145 L150,157 Q140,153 132,159 Z',
+  'abs4': 'M132,161 Q141,156 150,159 L150,162 Q140,166 132,162 Z',
+  'quadLat': 'M114,188 Q105,204 108,229 L116,254 L121,267 L125,256 L120,221 Z',
+  'quadRec': 'M117,190 L132,214 L139,234 L130,264 L124,269 L123,244 L115,218 Z',
+  'quadMed': 'M137,230 L139,250 L133,271 Q125,277 123,265 L129,247 Z',
+  'calves': 'M131,297 Q139,313 129,343 L125,350 L124,334 Z'
+};
+
+const BACK = {
+  'neck': 'M150,34 Q141,35 136,58 L133,68 L150,73 Z',
+  'traps': 'M150,69 L128,69 L122,81 L127,95 L150,114 Z',
+  'back': 'M124,98 L150,115 L137,135 L130,148 L119,143 L115,121 Z',
+  'lower-back': 'M150,117 L135,139 L121,165 L121,175 Q139,172 150,187 Z',
+  'side-delts': 'M124,71 Q105,67 98,81 L95,96 Q109,98 124,84 Z',
+  'rear-delts': 'M124,83 L128,95 L115,109 L106,101 L109,94 Z',
+  'triceps': 'M96,99 L108,98 L104,117 L93,142 Q85,146 79,138 L86,122 Z',
+  'forearms': 'M79,141 L92,145 L81,167 L65,199 L56,195 L68,168 Z',
+  'hamstrings': 'M110,222 L130,222 L139,230 L133,263 L125,292 L118,287 L117,260 L107,278 L108,251 Z',
+  'calves': 'M117,292 Q128,286 132,304 L130,322 L125,338 Q114,342 110,328 L109,315 Z',
+  'glutes': 'M150,179 Q134,168 122,177 L116,198 L111,216 Q124,230 149,220 Z'
+};
+
+/* ---------------------------------------------------------------------------
+   Leader-line callouts: the anatomical names printed around the figures.
+   `side` picks the label column, `y` is the first line's baseline and `dot`
+   is where the leader lands on the muscle. Same seven labels per view as the
+   printed chart, so shared groups (neck, forearms, calves) are named once.
+   --------------------------------------------------------------------------- */
+
+const CALLOUTS = {
+  "front": [
+    {
+      "side": "left",
+      "y": 48,
+      "lines": [
+        "PECTORALIS",
+        "MAJOR"
+      ],
+      "dot": [
+        126,
+        90
+      ]
+    },
+    {
+      "side": "left",
+      "y": 112,
+      "lines": [
+        "BICEPS BRACHII"
+      ],
+      "dot": [
+        90,
+        129
+      ]
+    },
+    {
+      "side": "left",
+      "y": 179,
+      "lines": [
+        "FOREARMS"
+      ],
+      "dot": [
+        73,
+        164
+      ]
+    },
+    {
+      "side": "left",
+      "y": 268,
+      "lines": [
+        "QUADRICEPS"
+      ],
+      "dot": [
+        116,
+        237
+      ]
+    },
+    {
+      "side": "right",
+      "y": 49,
+      "lines": [
+        "ANTERIOR",
+        "DELTOID"
+      ],
+      "dot": [
+        195,
+        89
+      ]
+    },
+    {
+      "side": "right",
+      "y": 131,
+      "lines": [
+        "SERRATUS",
+        "ANTERIOR"
+      ],
+      "dot": [
+        181,
+        131
+      ]
+    },
+    {
+      "side": "right",
+      "y": 179,
+      "lines": [
+        "CORE"
+      ],
+      "dot": [
+        168,
+        160
+      ]
+    }
+  ],
+  "back": [
+    {
+      "side": "right",
+      "y": 30,
+      "lines": [
+        "TRAPEZIUS"
+      ],
+      "dot": [
+        170,
+        71
+      ]
+    },
+    {
+      "side": "right",
+      "y": 62,
+      "lines": [
+        "MEDIAL &",
+        "POSTERIOR",
+        "DELTOID"
+      ],
+      "dot": [
+        200,
+        86
+      ]
+    },
+    {
+      "side": "right",
+      "y": 125,
+      "lines": [
+        "TRICEPS"
+      ],
+      "dot": [
+        207,
+        119
+      ]
+    },
+    {
+      "side": "right",
+      "y": 177,
+      "lines": [
+        "LATISSIMUS",
+        "DORSI"
+      ],
+      "dot": [
+        176,
+        129
+      ]
+    },
+    {
+      "side": "right",
+      "y": 237,
+      "lines": [
+        "GLUTES"
+      ],
+      "dot": [
+        180,
+        208
+      ]
+    },
+    {
+      "side": "right",
+      "y": 287,
+      "lines": [
+        "HAMSTRINGS"
+      ],
+      "dot": [
+        182,
+        263
+      ]
+    },
+    {
+      "side": "right",
+      "y": 345,
+      "lines": [
+        "GASTROCNEMIUS"
+      ],
+      "dot": [
+        181,
+        309
+      ]
+    }
+  ]
 };
 
 /**
@@ -95,13 +260,13 @@ const P = {
  */
 function getEffortClass(muscle) {
   if (!muscle) return 'bm-none';
-  const level = Math.min(5, Math.max(0, muscle.level || 0));
+  const level = Math.min(4, Math.max(0, Math.round(muscle.level || 0)));
   return level === 0 ? 'bm-none' : 'bm-effort-' + level;
 }
 
 function levelOf(muscle) {
   if (!muscle) return 0;
-  return Math.min(5, Math.max(0, Math.round(muscle.level || 0)));
+  return Math.min(4, Math.max(0, Math.round(muscle.level || 0)));
 }
 
 /** Get a tooltip text for a muscle with effort information */
@@ -124,7 +289,7 @@ function getEffortTooltip(muscle, name) {
   return base + effortText + intensityText + loadText + sessionsText;
 }
 
-/* The three chart tiers, top use first (same order as the reference legend). */
+/* The three chart tiers, top use first (same order as the printed legend). */
 const EFFORT_TIERS = [
   { cls: 'bm-effort-4', label: 'Most used' },
   { cls: 'bm-effort-3', label: 'Moderately used' },
@@ -154,9 +319,9 @@ function buildEffortLegend(status) {
   `;
 }
 
-/** Repeat a left-side SVG snippet on the right by mirroring it around x=100. */
+/** Repeat a left-side SVG snippet on the right by mirroring it around x=150. */
 function pair(left) {
-  return left + '<g transform="translate(200,0) scale(-1,1)">' + left + '</g>';
+  return left + '<g transform="translate(300,0) scale(-1,1)">' + left + '</g>';
 }
 
 /** A muscle region: filled shapes inherit the effort colour from the group. */
@@ -164,174 +329,149 @@ function region(muscle, shapes) {
   return `<g class="bm-region" data-muscle="${muscle}">${shapes}</g>`;
 }
 
-/** White anatomical divider, drawn on top of whatever colour the region has. */
+/** Anatomical divider inside a muscle group (tendon, head boundary). */
 function line(d) {
-  return `<path d="${d}" fill="none" stroke="${LINE}" stroke-width="1.1" stroke-linecap="round"/>`;
+  return `<path class="bm-line" d="${d}"/>`;
 }
 
+/** Contour detail on the plain silhouette (joints, jaw, fingers, toes). */
+function contour(d) {
+  return `<path class="bm-contour" d="${d}"/>`;
+}
+
+const LINE_HEIGHT = 11;
+const LABEL_X = { left: 50, right: 240 };
+
+/** One printed-style callout: stacked name + leader line + landing dot. */
+function callout(spec) {
+  const left = spec.side === 'left';
+  const anchor = LABEL_X[spec.side];
+  const dotX = spec.dot[0];
+  const dotY = spec.dot[1];
+  const last = spec.y + (spec.lines.length - 1) * LINE_HEIGHT;
+
+  const text = spec.lines.map(function (t, i) {
+    return `<text x="${anchor}" y="${spec.y + i * LINE_HEIGHT}" ` +
+      `text-anchor="${left ? 'end' : 'start'}">${t}</text>`;
+  }).join('');
+
+  // The leader leaves the label block's vertical centre and curves into the dot.
+  const sx = anchor + (left ? 5 : -5);
+  const sy = (spec.y + last) / 2;
+  const ex = dotX + (left ? -3 : 3);
+  const ey = dotY - 3;
+  const cx = (sx + ex) / 2 + (left ? -6 : 6);
+  const cy = (sy + ey) / 2 - 4;
+
+  return `${text}
+    <path class="bm-lead" d="M${sx},${sy} Q${cx},${cy} ${ex},${ey}"/>
+    <path class="bm-lead" d="M${ex + (left ? -5 : 5)},${ey - 3} L${ex},${ey} L${ex + (left ? -5 : 5)},${ey + 4}"/>`;
+}
+
+/** Grey silhouette: head, neck, torso, arms, hands, legs, feet. */
 function baseBody(view) {
-  const head =
-    view === 'front'
-      ? `<path class="bm-jaw" d="M91,52 C95,57 105,57 109,52" fill="none" stroke="${LINE}" stroke-width="1.1" stroke-linecap="round"/>`
-      : `<path class="bm-jaw" d="M90,57 C94,63 106,63 110,57" fill="none" stroke="${LINE}" stroke-width="1.1" stroke-linecap="round"/>`;
 
   return `
   <g class="bm-base">
-    <ellipse class="bm-shadow" cx="100" cy="397" rx="46" ry="5"/>
-    ${pair(`
-      <path d="${P.thigh}" fill="${BODY}"/>
-      <path d="${P.shin}" fill="${BODY}"/>
-      <path d="${P.foot}" fill="${JOINT}"/>
-    `)}
-    ${pair(`
-      <path d="${P.upperArm}" fill="none" stroke="${BODY}" stroke-width="25" stroke-linecap="round"/>
-      <path d="${P.lowerArm}" fill="none" stroke="${BODY}" stroke-width="21" stroke-linecap="round"/>
-      <path d="${P.hand}" fill="${JOINT}"/>
-      ${line('M52,236 L50,258')}
-      ${line('M57,239 L55,259')}
-      ${line('M47,242 L45,259')}
-    `)}
-    ${pair(`<path d="${P.torso}" fill="${BODY}"/>`)}
-    <path d="${P.neck}" fill="${BODY}"/>
-    <path d="${P.head}" fill="${BODY}"/>
-    ${head}
+    <ellipse class="bm-shadow" cx="150" cy="411" rx="63" ry="7"/>
+    ${pair(`<path class="bm-flesh" d="${B.leg}"/>`)}
+    ${pair(`<path class="bm-joint" d="${B.foot}"/>`)}
+    ${pair(`<path class="bm-flesh" d="${B.arm}"/>`)}
+    ${pair(`<path class="bm-joint" d="${B.hand}"/>`)}
+
+    <path class="bm-flesh" d="${B.torso}"/>
+    <path class="bm-flesh" d="${B.neck}"/>
+    ${pair(`<ellipse class="bm-flesh" cx="128" cy="37" rx="3.4" ry="5.6"/>`)}
+    <path class="bm-flesh" d="${B.head}"/>
+    ${view === 'back' ? contour('M137,50 C143,55 157,55 163,50') : contour('M139,52 C144,58 156,58 161,52')}
+  </g>`;
+}
+
+/** Joint markers sit on top of the muscles, like the printed chart. */
+function jointDetail() {
+  return '<g class="bm-joints">' + pair(contour('M105,280 L116,286 L130,282') + contour('M116,365 L127,365')) + '</g>';
+}
+
+function calloutsFor(view) {
+  return `
+  <g class="bm-labels" aria-hidden="true">
+    ${CALLOUTS[view].map(callout).join('')}
   </g>`;
 }
 
 /* ============================== FRONT VIEW =============================== */
 
 function figureFront() {
+  const F = FRONT;
   return `
-  <svg class="bm-svg" viewBox="0 0 200 400" role="img" aria-label="Front view, muscles trained from the front">
+  <svg class="bm-svg" viewBox="-55 0 400 420" role="img" aria-label="Front view, muscles trained from the front">
     ${baseBody('front')}
 
-    ${region('neck', `
-      <path d="M92,54 L108,54 L111,80 L89,80 Z"/>
-      ${line('M96,55 C94,63 93,71 92,79')}
-    `)}
+    ${region('neck', `<path d="${F.neck}"/>`)}
 
-    ${region('traps', pair(`
-      <path d="M94,74 C85,77 77,81 70,88 C78,90 86,88 91,84 C96,80 99,77 99,74 Z"/>
-    `))}
+    ${region('traps', pair(`<path d="${F.traps}"/>`))}
 
-    ${region('side-delts', pair(`
-      <path d="M74,84 C66,88 61,97 60,109 C59,120 63,129 70,131 C75,132 79,128 80,121 L79,93 C78,88 76,83 74,84 Z"/>
-      ${line('M74,88 C70,97 68,109 69,122')}
-    `))}
+    ${region('chest', pair(`<path d="${F.chest}"/>`))}
 
-    ${region('front-delts', pair(`
-      <path d="M80,90 C86,85 92,83 97,84 L97,104 C93,114 86,120 80,122 C78,112 78,99 80,90 Z"/>
-      ${line('M83,90 C85,99 85,109 83,119')}
-    `))}
+    ${region('obliques', pair(`<path d="${F.obliques}"/>` + line('M115,119 L128,125 M116,127 L129,133 M117,135 L130,141 M118,143 L131,149')))}
 
-    ${region('chest', pair(`
-      <path d="M98,84 C90,82 83,85 79,93 C76,101 76,113 79,122 C83,130 91,133 98,131 Z"/>
-      ${line('M79,110 C86,113 93,112 98,107')}
-    `))}
+    ${region('abs', pair(`<path d="${F.abs1}"/><path d="${F.abs2}"/>` +
+      `<path d="${F.abs3}"/><path d="${F.abs4}"/>`))}
 
-    ${region('biceps', pair(`
-      <path d="M72,98 C65,102 61,115 60,131 C59,146 61,161 66,169 C70,173 74,169 75,159 C76,143 75,122 74,108 C73,100 73,96 72,98 Z"/>
-      ${line('M61,110 C60,128 61,146 65,164')}
-    `))}
+    ${region('side-delts', pair(`<path d="${F['side-delts']}"/>`))}
 
-    ${region('forearms', pair(`
-      <path d="M64,176 C58,183 54,199 53,216 C52,230 55,242 59,247 C63,250 66,245 66,233 C67,215 67,193 66,180 Z"/>
-      ${line('M55,186 C54,206 54,226 57,244')}
-    `))}
+    ${region('front-delts', pair(`<path d="${F['front-delts']}"/>`))}
 
-    ${region('abs', pair(`
-      <rect x="88" y="132" width="12" height="16" rx="4"/>
-      <rect x="88" y="150" width="12" height="16" rx="4"/>
-      <rect x="88" y="168" width="12" height="16" rx="4"/>
-      <path d="M88,186 L100,186 L100,204 C95,209 90,203 88,194 Z"/>
-    `))}
+    ${region('biceps', pair(`<path d="${F.biceps}"/>`))}
 
-    ${region('obliques', pair(`
-      <path d="M88,126 C81,134 77,150 78,168 C78,183 82,194 88,202 L88,186 L88,126 Z"/>
-      ${line('M84,130 C81,140 80,152 80,164')}
-      ${line('M85,144 C82,153 81,163 82,173')}
-    `))}
+    ${region('forearms', pair(`<path d="${F.forearms}"/>`))}
 
-    ${region('quads', pair(`
-      <path d="M99,216 C91,217 85,222 82,231 C78,244 76,262 77,278 C78,289 81,296 85,298 C90,301 95,297 97,289 C99,274 100,246 100,224 Z"/>
-      ${line('M93,222 C91,242 90,266 90,290')}
-      ${line('M86,232 C84,250 83,270 85,290')}
-      ${line('M96,240 C96,260 96,276 96,288')}
-    `))}
+    ${region('quads', pair(`<path d="${F.quadLat}"/><path d="${F.quadRec}"/>` +
+      `<path d="${F.quadMed}"/>`))}
 
-    ${region('calves', pair(`
-      <path d="M96,304 C89,309 83,320 81,334 C79,348 81,362 85,372 L93,373 C95,357 96,334 98,312 Z"/>
-      ${line('M88,308 C86,326 86,348 88,368')}
-    `))}
+    ${region('calves', pair(`<path d="${F.calves}"/>`))}
+
+
+    <g class="bm-contour">
+      ${pair(contour('M119,164 L144,215 L150,223') + contour('M124,164 L138,211') + contour('M111,184 L132,216') + contour('M107,291 L118,313 L116,361'))}
+    </g>
+    ${jointDetail()}
+    ${calloutsFor('front')}
   </svg>`;
 }
 
 /* =============================== BACK VIEW =============================== */
 
 function figureBack() {
+  const K = BACK;
   return `
-  <svg class="bm-svg" viewBox="0 0 200 400" role="img" aria-label="Back view, muscles trained from behind">
+  <svg class="bm-svg" viewBox="30 0 400 420" role="img" aria-label="Back view, muscles trained from behind">
     ${baseBody('back')}
 
-    ${region('neck', `
-      <path d="M92,54 L108,54 L110,80 L90,80 Z"/>
-      ${line('M94,56 C94,64 95,72 96,79')}
-      ${line('M106,56 C106,64 105,72 104,79')}
-    `)}
+    ${region('neck', `<path d="${K.neck}"/>`)}
 
-    ${region('traps', pair(`
-      <path d="M100,72 C86,74 75,81 68,90 C79,95 90,103 96,113 C99,121 100,128 100,134 Z"/>
-      ${line('M83,87 C88,95 93,105 96,114')}
-    `))}
+    ${region('traps', pair(`<path d="${K.traps}"/>`))}
 
-    ${region('side-delts', pair(`
-      <path d="M74,84 C66,88 61,97 60,109 C59,120 63,129 70,131 C75,132 79,128 80,121 L79,93 C78,88 76,83 74,84 Z"/>
-      ${line('M74,88 C70,97 68,109 69,122')}
-    `))}
+    ${region('back', pair(`<path d="${K.back}"/>`))}
 
-    ${region('rear-delts', pair(`
-      <path d="M80,92 C86,86 92,84 97,85 L97,104 C93,114 87,120 81,122 C79,113 78,100 80,92 Z"/>
-      ${line('M84,90 C86,99 86,110 83,119')}
-    `))}
+    ${region('lower-back', pair(`<path d="${K['lower-back']}"/>`))}
 
-    ${region('triceps', pair(`
-      <path d="M73,100 C66,104 62,117 61,133 C60,148 62,163 67,171 C71,175 75,171 76,161 C77,145 76,124 75,110 C74,102 74,98 73,100 Z"/>
-      ${line('M63,114 C62,132 63,150 68,167')}
-    `))}
+    ${region('side-delts', pair(`<path d="${K['side-delts']}"/>`))}
 
-    ${region('back', pair(`
-      <path d="M97,116 C88,121 78,130 74,142 C70,155 71,170 75,184 C81,195 90,200 99,201 L100,196 L100,116 Z"/>
-      ${line('M92,124 C86,136 81,152 79,170')}
-      ${line('M87,140 C82,152 79,166 79,182')}
-    `))}
+    ${region('rear-delts', pair(`<path d="${K['rear-delts']}"/>`))}
 
-    ${region('lower-back', `
-      <path d="M93,178 L107,178 L109,206 C103,213 97,213 91,206 Z"/>
-      ${line('M100,180 L100,210')}
-    `)}
+    ${region('triceps', pair(`<path d="${K.triceps}"/>`))}
 
-    ${region('glutes', `
-      <path d="M100,204 C92,202 82,205 78,214 C74,225 76,239 83,246 C90,251 96,248 100,242 C104,248 110,251 117,246 C124,239 126,225 122,214 C118,205 108,202 100,204 Z"/>
-      ${line('M100,206 L100,246')}
-      ${line('M87,212 C83,222 83,234 88,243')}
-      ${line('M113,212 C117,222 117,234 112,243')}
-    `)}
+    ${region('forearms', pair(`<path d="${K.forearms}"/>`))}
 
-    ${region('forearms', pair(`
-      <path d="M64,176 C58,183 54,199 53,216 C52,230 55,242 59,247 C63,250 66,245 66,233 C67,215 67,193 66,180 Z"/>
-      ${line('M55,186 C54,206 54,226 57,244')}
-    `))}
+    ${region('hamstrings', pair(`<path d="${K.hamstrings}"/>`))}
 
-    ${region('hamstrings', pair(`
-      <path d="M99,250 C90,255 83,266 79,281 C76,292 78,299 83,303 L95,304 C97,293 99,268 100,252 Z"/>
-      ${line('M90,256 C86,270 84,286 85,300')}
-      ${line('M86,268 C83,280 82,292 84,301')}
-    `))}
+    ${region('calves', pair(`<path d="${K.calves}"/>`))}
 
-    ${region('calves', pair(`
-      <path d="M97,304 C88,309 79,321 77,338 C75,355 78,367 83,374 L93,375 C95,360 97,334 99,314 Z"/>
-      ${line('M91,310 C86,328 84,350 85,370')}
-    `))}
+    ${region('glutes', pair(`<path d="${K.glutes}"/>`))}
+
+    ${jointDetail()}
+    ${calloutsFor('back')}
   </svg>`;
 }
 
@@ -358,7 +498,7 @@ function renderBodyMap(root, status) {
     // Colour lives on the <g> via the effort class in style.css; children
     // that declare their own fill/stroke (anatomical lines) keep theirs.
     g.setAttribute('fill', 'currentColor');
-    g.setAttribute('stroke', 'currentColor');
+    // CSS supplies white anatomical seams independently of effort fill.
     g.classList.add(effortClass);
 
     g.setAttribute('tabindex', '0');

@@ -235,3 +235,10 @@ MIT. Built with:
 - Gemini API
 - Chart.js, Tailwind CSS, Lucide icons (all CDN)
 - No build step, no framework, no lock-in.
+## Verification after this update
+
+Run `npm ci`, `npm test`, and `npm run check` locally. The test suite now checks frontend forms, calendar rendering, legacy muscle groups, and service-worker routing as well as the backend and reminders.
+
+A Git push triggers the configured Netlify frontend deployment. Backend fixes require copying the updated `Code.js` into the Sheet's Apps Script project and creating a new version under **Deploy → Manage deployments**. Keep the existing deployment URL. This update fixes stale workout load after edits and returns saved class recurrence, end time, and color.
+
+If **Test Gemini** reports a missing key, set `GEMINI_API_KEY` in Apps Script **Project Settings → Script properties**. Without it, food parsing uses the local fallback and image/AI features are unavailable.

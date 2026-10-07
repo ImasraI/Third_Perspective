@@ -523,7 +523,19 @@ section('[11b] edit food + edit workout');
   check('edit.workout succeeds', editWork.ok === true, editWork.error);
   check('workout renamed', editWork.ok === true && sb.sheets.Workouts.rows[1][2] === 'Push Day', String(sb.sheets.Workouts.rows[1][2]));
   check('duration updated', editWork.ok === true && sb.sheets.Workouts.rows[1][4] === 70, String(sb.sheets.Workouts.rows[1][4]));
-  check('muscles stored', editWork.ok === true && sb.sheets.Workouts.rows[1][5] === 'chest,triceps,shoulders', String(sb.sheets.Workouts.rows[1][5]));
+  check('muscles stored', editWork.ok === true && sb.sheets.Workouts.rows[1][5] === 'chest,triceps,front-delts,side-delts,rear-delts', String(sb.sheets.Workouts.rows[1][5]));
+  const previousLoad = sb.sheets.Workouts.rows[1][7];
+  check('workout edit regenerates stored muscle load', previousLoad !== '{}' && !!JSON.parse(previousLoad).chest);
+  const changed = call(sb, { action: 'edit.workout', rowId: 2, exercises: 'squat 40kg 3x10', muscles: ['quads', 'glutes'] });
+  const changedLoad = JSON.parse(sb.sheets.Workouts.rows[1][7]);
+  check('changing exercises replaces old muscle load', changed.ok && changedLoad.quads > 0 && !changedLoad.chest);
+  check('fractional workout row is rejected', call(sb, { action: 'edit.workout', rowId: 2.5, name: 'Invalid' }).ok === false);
+  check('negative workout duration is rejected', call(sb, { action: 'edit.workout', rowId: 2, durationMin: -10 }).ok === false);
+  check('invalid workout muscle list is rejected', call(sb, { action: 'edit.workout', rowId: 2, muscles: ['invalid'] }).ok === false);
+  check('legacy workout with no exercise text still has effort', (() => {
+    sb.sheets.Workouts.appendRow([new Date(), wdate, 'Manual session', '', 15, 'biceps', '']);
+    return call(sb, { action: 'state' }).workouts.muscleStatus.biceps.load7d > 0;
+  })());
   // Bad rowId rejected.
   check('edit.food rejects bad rowId', call(sb, { action: 'edit.food', rowId: 9999 }).ok === false);
   check('edit.workout rejects bad rowId', call(sb, { action: 'edit.workout', rowId: 9999 }).ok === false);
@@ -532,6 +544,18 @@ section('[11b] edit food + edit workout');
 }
 
 // ===========================================================================
+section('[11c] class metadata');
+{
+  const sb = makeSandbox();
+  call(sb, {action: 'state'});
+  call(sb, {action: 'class.add', day: 'Wednesday', time: '09:00', subject: 'Physics', notes: JSON.stringify({date: '2026-10-07', repeat: 'never', endTime: '10:00', color: 'purple'})});
+  const cls = call(sb, {action: 'state'}).classes[0];
+  check('class date and repeat survive the Sheet round trip', cls.date === '2026-10-07' && cls.repeat === 'never');
+  check('class end time and color survive the Sheet round trip', cls.endTime === '10:00' && cls.color === 'purple');
+  call(sb, {action: 'class.add', subject: 'Legacy', notes: 'ordinary notes'});
+  check('legacy class notes default to weekly recurrence', call(sb, {action: 'state'}).classes[0].repeat === 'weekly');
+}
+
 section('[12] app key auth');
 {
   const open = makeSandbox({ props: {} });

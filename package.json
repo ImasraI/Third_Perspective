@@ -4,10 +4,14 @@
   "private": true,
   "description": "ThirdPerspective PWA - nutrition, workouts, expenses, study and tasks on Google Apps Script",
   "scripts": {
-    "test": "node tests/test_api.js && node tests/test_parsers.js && node tests/test_notify.js && node tests/test_notify_runtime.js",
+    "test": "node tests/test_api.js && node tests/test_parsers.js && node tests/test_notify.js && node tests/test_notify_runtime.js && node tests/test_frontend.js",
     "test:api": "node tests/test_api.js",
     "test:notify": "node tests/test_notify.js && node tests/test_notify_runtime.js",
-    "check": "node --check Code.js && node --check web/app.js && node --check web/bodymap.js && node --check web/notify.js && node --check web/sound.js && node --check web/sw.js"
+    "check": "node --check Code.js && node --check web/app.js && node --check web/bodymap.js && node --check web/notify.js && node --check web/sound.js && node --check web/sw.js",
+    "test:frontend": "node tests/test_frontend.js"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^30.1.2"
+  }
 }

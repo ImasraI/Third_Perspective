@@ -346,4 +346,18 @@ test('an empty tracker produces no reminders', () => {
   assert.deepStrictEqual(plan, []);
 });
 
+test('one-off and daily class reminders follow their saved recurrence', () => {
+  const base = new Date(2026, 9, 7, 10, 0);
+  const make = c => N.buildPlan({classes: [c]}, base);
+  assert.ok(make({rowId: 2, date: '2026-10-08', repeat: 'never', time: '12:00'}).some(p => p.key === 'class-2'));
+  assert.ok(!make({rowId: 2, date: '2026-10-06', repeat: 'never', time: '12:00'}).some(p => p.key === 'class-2'));
+  const daily = make({rowId: 2, date: '2026-10-07', repeat: 'daily', time: '12:00'}).find(p => p.key === 'class-2');
+  assert.strictEqual(daily.at.getDate(), 7);
+  assert.strictEqual(daily.at.getHours(), 11);
+  assert.strictEqual(daily.at.getMinutes(), 45);
+  const monthly = make({rowId: 2, date: '2026-10-06', repeat: 'monthly', time: '12:00'}).find(p => p.key === 'class-2');
+  assert.strictEqual(monthly.at.getMonth(), 10);
+  assert.strictEqual(monthly.at.getDate(), 6);
+});
+
 console.log('\n=== ' + passed + ' notification tests passed ===');

@@ -1,0 +1,145 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const { JSDOM } = require('jsdom');
+
+const web = path.join(__dirname, '..', 'web');
+const dom = new JSDOM(fs.readFileSync(path.join(web, 'index.html'), 'utf8'), {
+  url: 'http://localhost/', runScripts: 'outside-only'
+});
+const w = dom.window;
+const requests = [];
+w.lucide = { createIcons() {} };
+w.Chart = class { destroy() {} };
+w.AbortSignal = AbortSignal;
+w.fetch = async (url, options) => {
+  requests.push(JSON.parse(options.body));
+  return { ok: true, json: async () => ({ ok: true }) };
+};
+const context = dom.getInternalVMContext();
+vm.runInContext(fs.readFileSync(path.join(web, 'bodymap.js'), 'utf8'), context);
+vm.runInContext(fs.readFileSync(path.join(web, 'app.js'), 'utf8'), context);
+const run = code => vm.runInContext(code, context);
+const get = id => w.document.getElementById(id);
+const click = id => get(id).click();
+let count = 0;
+function test(name, fn) { fn(); count++; console.log('✓ ' + name); }
+
+async function main() {
+  // Let the real DOMContentLoaded handler wire all controls.
+  await new Promise(resolve => w.setTimeout(resolve, 0));
+  run(`S.data = {
+    goals: { calories: 2000, protein: 140, carbs: 250, fat: 70, studyMinutes: 120, monthBudget: 30000000, currency: 'toman' },
+    nutrition: { recent: [{ rowId: 2, date: '2026-10-07', food: 'Egg', qty: 2, unit: 'piece', calories: 144, protein: 12, carbs: 1, fat: 10 }] },
+    workouts: { recent: [{ rowId: 2, date: '2026-10-07', name: 'Push day', exercises: 'bench press', durationMin: 30, muscles: ['chest', 'triceps'] }], muscleStatus: { shoulders: { level: 3, daysAgo: 1 } } },
+    expenses: { byCategory: {} }, study: { week: {} }, classes: []
+  }; S.workouts = S.data.workouts.recent.slice();`);
+  test('food history edit opens the saved row', () => {
+    run('renderFoodLog(S.data)');
+    get('food-log').querySelector('[data-edit-sheet]').click();
+    assert.equal(get('food-edit-food').value, 'Egg');
+    assert.equal(get('food-edit-panel').classList.contains('hidden'), false);
+  });
+  test('workout edit retains muscles and exposes every group', () => {
+    run('renderWorkoutLog(S.data)');
+    get('wk-log').querySelector('[data-edit-sheet]').click();
+    assert.equal(get('workout-edit-name').value, 'Push day');
+    assert.equal(get('workout-edit-muscles').querySelectorAll('.on').length, 2);
+    assert.equal(get('workout-edit-muscles').querySelectorAll('[data-mus]').length, 17);
+    get('workout-edit-muscles').querySelector('[data-mus="biceps"]').click();
+    assert.equal(run('S.workoutEditMuscles.has("biceps")'), true);
+    assert.equal(run('S.muscles.has("biceps")'), false);
+  });
+  test('workout photo estimate updates the save selection', () => {
+    run(`renderWkEstimate({ muscles: ['quads', 'glutes'], effort: [{ muscle: 'quads', level: 3 }, { muscle: 'glutes', level: 2 }] })`);
+    assert.equal(run('S.muscles.has("quads") && S.muscles.has("glutes")'), true);
+    assert.equal(get('wk-muscles').querySelectorAll('.on').length, 2);
+  });
+  test('legacy shoulders become three deltoid regions', () => {
+    run('normaliseWorkoutState(S.data); renderBodyMap(document.getElementById("bodymap"), S.data.workouts.muscleStatus)');
+    assert.equal(run('Object.keys(S.data.workouts.muscleStatus).length'), 17);
+    assert.equal(get('bodymap').querySelectorAll('[data-muscle="rear-delts"].bm-effort-3').length, 1);
+    assert.equal(get('bodymap').querySelectorAll('svg').length, 2);
+    assert.equal(/undefined|NaN/.test(get('bodymap').innerHTML), false);
+  });
+  test('every month renders complete Monday-based rows', () => {
+    for (let month = 0; month < 12; month++) {
+      run(`renderMonthGrid(new Date(2026, ${month}, 7), new Date(2026, ${month}, 15))`);
+      const cells = get('cal-grid-body').querySelectorAll('[data-date]');
+      assert.equal(cells.length % 7, 0);
+      assert.ok(cells.length >= 28 && cells.length <= 42);
+      assert.equal(new Date(cells[0].dataset.date + 'T12:00:00').getDay(), 1);
+    }
+  });
+  test('month navigation from the 31st does not skip a month', () => {
+    run('S.calendar.view = "month"; S.calendar.start = new Date(2026, 0, 31)');
+    click('cal-next');
+    assert.equal(run('S.calendar.start.getMonth()'), 1);
+    assert.equal(run('S.calendar.start.getDate()'), 1);
+  });
+  test('week view names days correctly and spans seven days', () => {
+    run('renderWeekList(new Date(2026, 9, 7), new Date(2026, 9, 7), null)');
+    assert.equal(get('cal-list').querySelectorAll('[data-date]').length, 7);
+    assert.match(get('cal-list').textContent, /Monday/);
+  });
+  test('class recurrence respects one-off, daily, and monthly dates', () => {
+    run(`S.data.classes = [{rowId: 2, day: 'Wednesday', date: '2026-10-07', repeat: 'never'}]`);
+    assert.equal(run('classesForDate(new Date(2026, 9, 7)).length'), 1);
+    assert.equal(run('classesForDate(new Date(2026, 9, 14)).length'), 0);
+    run('S.data.classes[0].repeat = "daily"');
+    assert.equal(run('classesForDate(new Date(2026, 9, 8)).length'), 1);
+    assert.equal(run('classesForDate(new Date(2026, 9, 6)).length'), 0);
+    run('S.data.classes[0].repeat = "monthly"');
+    assert.equal(run('classesForDate(new Date(2026, 10, 7)).length'), 1);
+    assert.equal(run('classesForDate(new Date(2026, 10, 8)).length'), 0);
+    run('S.data.classes = []');
+  });
+  test('class form opens and cancels without a missing element error', () => {
+    click('cal-add');
+    assert.equal(get('cal-add-sheet').classList.contains('hidden'), false);
+    click('cl-add-cancel');
+    assert.equal(get('cal-add-sheet').classList.contains('hidden'), true);
+  });
+  test('invalid stored tab falls back to Today', () => {
+    run('switchTab("does-not-exist")');
+    assert.equal(get('panel-today').classList.contains('hidden'), false);
+  });
+  test('goal refresh preserves edits to any individual field', () => {
+    get('g-pro').value = '170'; get('g-pro').dataset.touched = '1';
+    run('renderGoals(S.data)');
+    assert.equal(get('g-pro').value, '170');
+    assert.equal(get('g-cal').value, '2000');
+  });
+  run('load = async () => {}; S.url = "https://script.google.com/macros/s/test/exec"');
+  get('food-edit-qty').value = '3';
+  await run('saveFoodEdit()');
+  assert.equal(requests.at(-1).action, 'edit.food');
+  assert.equal(requests.at(-1).qty, 3);
+  assert.equal(requests.at(-1).rowId, 2);
+  count++; console.log('✓ food edit submits the saved row and changed quantity');
+  await run('saveWorkoutEdit()');
+  assert.equal(requests.at(-1).action, 'edit.workout');
+  assert.deepEqual(requests.at(-1).muscles, ['chest', 'triceps', 'biceps']);
+  count++; console.log('✓ workout edit submits its own muscle selection');
+  await assert.rejects(run('S.url = "https://script.google.com/macros/s/test/exec"; fetch = async () => ({ok: true, json: async () => { throw new Error() }}); api("state")'), /did not return JSON/);
+  count++; console.log('✓ non-JSON backend responses have an actionable error');
+
+  const events = {};
+  const sw = { URL, Promise, self: { location: { origin: 'https://example.com' }, addEventListener: (type, fn) => events[type] = fn } };
+  vm.runInNewContext(fs.readFileSync(path.join(web, 'sw.js'), 'utf8'), sw);
+  test('service worker leaves backend and third-party requests alone', () => {
+    for (const url of ['https://script.google.com/macros/s/test/exec', 'https://script.googleusercontent.com/test', 'https://cdn.example.com/lib.js']) {
+      events.fetch({ request: { method: 'GET', url }, respondWith: () => assert.fail('external request was intercepted') });
+    }
+  });
+  test('service worker intercepts same-origin assets without throwing', () => {
+    let intercepted = false;
+    sw.fetch = async () => ({ ok: false });
+    events.fetch({ request: { method: 'GET', url: 'https://example.com/app.js' }, respondWith: () => intercepted = true });
+    assert.equal(intercepted, true);
+  });
+  console.log(`\n${count} frontend/runtime regression checks passed`);
+  dom.window.close();
+}
+main().catch(error => { console.error(error); dom.window.close(); process.exitCode = 1; });

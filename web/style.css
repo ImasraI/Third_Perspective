@@ -444,36 +444,69 @@ select.field option { background: var(--panel); color: var(--text); }
 .badge-manual  { background: rgba(169, 161, 150, 0.14); color: var(--text-dim); border: 1px solid rgba(169, 161, 150, 0.3); }
 
 /* ============================================================================
-   Muscle body map — anatomical chart (pink / orange / yellow tiers)
+   Muscle body map — anatomical chart on the app background
+   ----------------------------------------------------------------------------
+   Same three tiers as the printed chart (pink / orange / yellow), but drawn on
+   the panel the tab already uses instead of on a white card. The silhouette is
+   a mid grey and the muscle seams are a translucent white, so neighbouring
+   regions still read as separate muscles on a dark surface.
    ========================================================================== */
 .bm-stage {
   margin-top: 0.5rem;
-  padding: 1rem 0.85rem 0.9rem;
-  background: #f6f4f1;
-  border: 1px solid rgba(217, 211, 202, 0.18);
-  border-radius: 4px;
+  padding: 0.5rem 0 0;
+  background: transparent;
+  border: 0;
 }
 .bm-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 0.75rem;
   align-items: start;
 }
-.bm-figure { position: relative; display: flex; flex-direction: column; align-items: center; }
-.bm-svg { width: 100%; height: auto; display: block; overflow: visible; }
-.bm-shadow { fill: rgba(62, 55, 48, 0.1); }
+.bm-figure { position: relative; }
+.bm-svg { width: 100%; height: auto; display: block; }
 
-/* Regions inherit their colour from the effort class; the card-coloured
-   stroke is what separates neighbouring muscles, like the white seams in the
-   reference chart. Level 0 stays plain silhouette grey. */
+/* Plain silhouette: the untracked body reads as warm grey, the joints
+   (hands, feet) sit a shade darker, exactly as in the chart. */
+.bm-flesh { fill: #6e6963; }
+.bm-joint { fill: #5c5751; }
+.bm-shadow { fill: rgba(255, 255, 255, 0.045); }
+.bm-contour {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.24);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Printed-style callouts: muscle names, leader lines and landing dots. */
+.bm-labels { pointer-events: none; }
+.bm-labels text {
+  fill: #b3ada5;
+  font-family: var(--font-ui);
+  font-size: 8.6px;
+  font-weight: 700;
+  letter-spacing: 0.25px;
+}
+.bm-lead { fill: none; stroke: rgba(255, 255, 255, 0.26); stroke-width: 0.9; }
+.bm-lead-dot { fill: rgba(255, 255, 255, 0.55); }
+
+/* Regions inherit their colour from the effort class; the translucent seam is
+   what separates neighbouring muscles. Level 0 stays plain silhouette grey. */
 .bm-region {
   cursor: pointer;
-  fill: #a9a6a1;
-  stroke: #f6f4f1;
-  stroke-width: 1.1;
+  fill: #6e6963;
+  stroke: rgba(255, 255, 255, 0.32);
+  stroke-width: 0.9;
   stroke-linejoin: round;
   stroke-linecap: round;
   transition: fill 0.3s ease, opacity 0.3s ease, filter 0.2s ease;
+}
+.bm-region .bm-line {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 0.9;
+  stroke-linecap: round;
 }
 .bm-region.bm-effort-1,
 .bm-region.bm-effort-2 { fill: #f5dd1e; }
@@ -484,25 +517,25 @@ select.field option { background: var(--panel); color: var(--text); }
 .bm-region:focus-visible { filter: brightness(1.12) drop-shadow(0 0 3px rgba(192, 68, 110, 0.9)); }
 .bm-region.bm-out { opacity: 0.22; }
 
-/* Legend: three tiers on the light card, swatches as squares like the chart. */
-.bm-effort-legend { margin-top: 0.7rem; }
+/* Legend: three tiers, swatches as squares like the chart. */
+.bm-effort-legend { margin-top: 0.85rem; }
 .bm-effort-levels {
-  display: flex; flex-direction: column; align-items: flex-start;
-  gap: 0.3rem;
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 0.35rem 0.9rem;
 }
 .bm-effort-level {
   display: inline-flex; align-items: center; gap: 0.4rem;
   font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em;
-  text-transform: uppercase; color: #55514b;
+  text-transform: uppercase; color: var(--text-dim);
 }
 .bm-effort-label { color: inherit; }
 .bm-legend-title {
   margin-top: 0.5rem; font-size: 0.6rem; font-weight: 600;
-  letter-spacing: 0.05em; color: #8b857d;
+  letter-spacing: 0.05em; color: var(--text-mute);
 }
 .bm-effort-dot {
   width: 13px; height: 13px; border-radius: 2px; flex: none;
-  background: #a9a6a1;
+  background: #6e6963;
 }
 .bm-effort-dot.bm-effort-1,
 .bm-effort-dot.bm-effort-2 { background: #f5dd1e; }
@@ -510,7 +543,7 @@ select.field option { background: var(--panel); color: var(--text); }
 .bm-effort-dot.bm-effort-4 { background: #c0446e; }
 /* "never trained" — the workout-photo chips pass the bare class 'none'. */
 .bm-effort-dot.none,
-.bm-effort-dot.bm-none { background: #a9a6a1; }
+.bm-effort-dot.bm-none { background: #6e6963; }
 
 /* Legend chips under the map (app.js buildLegend): same three tiers. */
 .bm-legend { display: flex; flex-wrap: wrap; gap: 0.35rem; }
@@ -520,7 +553,7 @@ select.field option { background: var(--panel); color: var(--text); }
   background: var(--panel-2); border: 1px solid #454039;
   font-size: 0.68rem; font-weight: 600; color: var(--text-dim);
 }
-.bm-key .dot { width: 10px; height: 10px; border-radius: 2px; flex: none; background: #a9a6a1; }
+.bm-key .dot { width: 10px; height: 10px; border-radius: 2px; flex: none; background: #6e6963; }
 .bm-key .dot.bm-effort-1,
 .bm-key .dot.bm-effort-2 { background: #f5dd1e; }
 .bm-key .dot.bm-effort-3 { background: #e8862c; }
@@ -546,7 +579,6 @@ select.field option { background: var(--panel); color: var(--text); }
   transition: opacity 0.15s ease;
 }
 .bm-tip.on { opacity: 1; }
-
 /* ============================================================================
    Muscle chips
    ========================================================================== */
@@ -739,3 +771,34 @@ select.field option { background: var(--panel); color: var(--text); }
   .vs-scroll { padding: 12px 12px 32px; }
   .toast { right: 0.6rem; left: 0.6rem; max-width: none; }
 }
+
+/* Reference anatomical chart */
+.bm-stage { background: #fff; border-radius: 16px; padding: 28px 12px 16px; overflow: hidden; }
+.bm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
+.bm-flesh, .bm-joint { fill: #999a97; }
+.bm-shadow { fill: #f6f6f6; }
+.bm-contour { stroke: #e6e6e4; stroke-width: 1.4; }
+.bm-labels text { fill: #252525; font-family: Arial, sans-serif; font-size: 9px; letter-spacing: -.2px; }
+.bm-lead { stroke: #333; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.bm-region { fill: #999a97; stroke: #f4f4ef; stroke-width: 1.4; }
+.bm-region .bm-line { stroke: #f4f4ef; stroke-width: 1.4; }
+.bm-region.bm-effort-1, .bm-region.bm-effort-2 { fill: #ffdf00; }
+.bm-region.bm-effort-3 { fill: #f18925; }
+.bm-region.bm-effort-4 { fill: #d34270; }
+.bm-effort-levels { flex-direction: column; align-items: flex-start; gap: 5px; }
+.bm-effort-level { color: #252525; font-family: Arial, sans-serif; font-size: 11px; max-width: 135px; }
+.bm-effort-dot { width: 24px; height: 24px; border-radius: 0; }
+.bm-effort-dot.bm-effort-1, .bm-effort-dot.bm-effort-2, .bm-key .dot.bm-effort-1, .bm-key .dot.bm-effort-2 { background: #ffdf00; }
+.bm-effort-dot.bm-effort-3, .bm-key .dot.bm-effort-3 { background: #f18925; }
+.bm-effort-dot.bm-effort-4, .bm-key .dot.bm-effort-4 { background: #d34270; }
+.bm-legend-title { color: #666; text-align: center; }
+.bm-effort-legend { margin-top: -48px; position: relative; pointer-events: none; }
+@media (max-width: 480px) {
+  .bm-stage { padding: 18px 6px 12px; }
+  .bm-effort-legend { margin-top: 8px; }
+  .bm-effort-levels { flex-direction: row; gap: 8px; }
+  .bm-effort-level { font-size: 9px; flex: 1; }
+  .bm-effort-dot { width: 16px; height: 16px; }
+}
+
+.bm-labels text { font-size: 10px; }
