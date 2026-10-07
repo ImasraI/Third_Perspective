@@ -433,6 +433,22 @@ section('[7] AI muscle detection from free text');
 }
 
 // ===========================================================================
+section('[7b] fencing targets including low contributions');
+{
+  const sb = makeSandbox({ props: {} });
+  const parsed = call(sb, { action: 'parse.workout', text: 'fencing practice 20 minutes' });
+  check('fencing is recognised offline', parsed.kind === 'workout' && parsed.matched);
+  check('fencing includes legs, grip, arm and core targets', ['quads','calves','glutes','hamstrings','forearms','front-delts','side-delts','triceps','biceps','abs','obliques'].every(m => parsed.muscles.includes(m)));
+  check('supporting muscles retain smaller loads', parsed.load.biceps > 0 && parsed.load.biceps < parsed.load.quads);
+  const ai = makeSandbox({ geminiResponse: { kind: 'workout', muscles: [], exercises: [{name:'fencing', sets:1, reps:1}] } });
+  const answer = call(ai, {action:'parse', text:'fencing'});
+  check('empty LLM muscle result is repaired from fencing lookup', answer.muscles.includes('forearms') && answer.muscles.includes('quads'));
+  const saved = call(sb, {action:'log.workout', name:'Fencing', exercises:'fencing', muscles:[]});
+  check('fencing saves even when AI omitted all targets', saved.ok && saved.muscles.includes('quads'));
+  const state = call(sb, {action:'state'});
+  check('small fencing contributions remain listed in workout history', state.workouts.recent[0].muscles.includes('biceps'));
+}
+
 section('[8] expenses');
 {
   const sb = makeSandbox();

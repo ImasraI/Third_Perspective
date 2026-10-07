@@ -238,6 +238,13 @@ const EXERCISE_ROWS = [
   ['box jump', 8.0, { quads: 0.7, glutes: 0.7, calves: 0.9, abs: 0.3 }],
   ['hip thrust machine', 6.0, { glutes: 1.0, hamstrings: 0.5 }],
 
+  // Fencing: general MET from https://pacompendium.com/sports/ (6.0).
+  // Relative contributions below are conservative app heuristics, not measured
+  // percentages. Include supporting muscles even when their effort is small.
+  ['fencing', 6.0, { quads: 0.65, calves: 0.55, glutes: 0.4, hamstrings: 0.35,
+    forearms: 0.25, 'front-delts': 0.15, 'side-delts': 0.1, triceps: 0.12,
+    biceps: 0.08, abs: 0.12, obliques: 0.08 }],
+
   // cardio / conditioning
   ['run', 9.0, { quads: 0.5, calves: 0.5, hamstrings: 0.4, glutes: 0.3, abs: 0.3 }],
   ['running', 9.0, { quads: 0.5, calves: 0.5, hamstrings: 0.4, glutes: 0.3, abs: 0.3 }],
@@ -1005,6 +1012,9 @@ function workoutState() {
     const d = rowDateStr(rows[i][1]);
     // Expand legacy buckets ("shoulders") so old rows still colour the map.
     const muscles = expandMuscles(splitList(rows[i][5]));
+    if (/\bfencing\b/i.test(String(rows[i][2] || '') + ' ' + String(rows[i][3] || ''))) {
+      Object.keys(EXERCISES.fencing.muscles).forEach(function (m) { if (muscles.indexOf(m) === -1) muscles.push(m); });
+    }
     const storedLoad = loadCol !== -1 ? parseLoadCell(rows[i][loadCol]) : null;
     const rec = {
       rowId: i + 1,
@@ -1573,7 +1583,8 @@ function parseWorkoutImage(req) {
     '   muscle name, e.g. chest/biceps/quads], effort: [ { muscle: name, level: 0..4 } ] }.\n' +
     '2. `level` is 0 (untrained) to 4 (maximal effort); 1 = light, 2 = moderate,\n' +
     '   3 = hard, 4 = very hard / near failure.\n' +
-    '3. Include every muscle visibly doing work: not just the prime mover but\n' +
+    '3. List a targeted muscle even when its effort rounds to 0; involvement and intensity are separate.\n' +
+    '   Include every muscle visibly doing work: not just the prime mover but\n' +
     '   stabilisers and the grip/forearms when gripping something.\n' +
     '4. If the photo is just a person stretching or walking, set recognised=false\n' +
     '   and leave muscles empty. Do NOT guess a generic "gym session".\n' +
@@ -1705,6 +1716,8 @@ function parseWithGemini(text) {
     '5. Set kind="unknown" if the line is not a food, workout, study, expense or task.\n\n' +
     'WORKOUT RULES:\n' +
     '- muscles must be chosen from: ' + MUSCLES.join(', ') + '.\n' +
+    '- Include primary movers, supporting muscles, grip muscles and stabilisers even when their contribution is low. Do not omit involvement merely because effort rounds to zero.\n' +
+    '- Fencing involves quads, glutes, hamstrings, calves, forearms, front-delts, side-delts, triceps, biceps, abs and obliques; individual contributions depend on the drills.\n' +
     '- Be generous: barbell back squat also trains quads, glutes, hamstrings.\n' +
     '- durationMin is the session length in minutes; use 0 if not stated.\n' +
     '- Break the line into `exercises`, one entry per distinct movement.\n' +
@@ -1739,9 +1752,9 @@ function parseWithGemini(text) {
     out.exercisesParsed = scored.exercises;
     out.load = scored.load;
     out.kcal = scored.kcal;
-    out.muscles = normaliseMuscles(d.muscles).length
-      ? normaliseMuscles(d.muscles)
-      : (scored.muscles.length ? scored.muscles : local.muscles);
+    out.muscles = normaliseMuscles([].concat(d.muscles || [], scored.muscles || [], local.muscles || []));
+    // Keep deterministic support for recognised activities if AI omits a group.
+    Object.keys(local.load).forEach(function (m) { if (!out.load[m]) out.load[m] = local.load[m]; });
   }
   if (out.kind === 'study') { out.subject = d.subject || 'Study'; out.minutes = num(d.durationMin) || 30; }
   if (out.kind === 'expense') { out.amount = num(d.amount); out.category = d.category || 'Miscellaneous'; out.merchant = d.merchant || ''; }
@@ -2242,13 +2255,14 @@ function logExpense(req) {
 }
 
 function logWorkout(req) {
-  const muscles = normaliseMuscles(req.muscles);
+  const inferred = parseWorkoutLine(req.exercises || req.name || '', bodyWeightKg());
+  const muscles = normaliseMuscles([].concat(req.muscles || [], inferred.muscles));
   if (!muscles.length) return { ok: false, error: 'Pick at least one muscle group' };
   const bw = bodyWeightKg();
 
   // Prefer the client's parse, but recompute server-side so effort can never be
   // faked or lost to an old client that does not know about it yet.
-  const parsed = parseWorkoutLine(req.exercises || '', bw);
+  const parsed = inferred;
   const clientLoad = req.load ? parseLoadCell(req.load) : null;
   const load = (clientLoad && Object.keys(clientLoad).length) ? clientLoad : parsed.load;
   const finalMuscles = parsed.muscles.length ? parsed.muscles : muscles;

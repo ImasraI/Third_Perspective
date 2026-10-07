@@ -348,7 +348,7 @@ function renderWorkoutLog(d) {
       <div class="flex-1 min-w-0">
         <div class="text-sm font-semibold text-slate-100">${esc(w.name)}</div>
         <div class="text-[11px] text-slate-500 font-mono">${w.durationMin ? w.durationMin + 'm · ' : ''}${esc(w.exercises || '')}</div>
-        <div class="flex flex-wrap gap-1 mt-1">${(w.muscles || []).map(m =>
+        <div class="flex flex-wrap gap-1 mt-1">${[...new Set([...(w.muscles || []), ...activityMuscleTargets((w.name || '') + ' ' + (w.exercises || ''))])].map(m =>
           `<span class="badge badge-cache">${esc(m)}</span>`).join('')}</div>
       </div>
       <div class="flex items-center gap-1">
@@ -1249,18 +1249,18 @@ function renderWkEstimate(r) {
     const lvl = effortByMuscle[m] || 0;
     const effClass = lvl === 0 ? 'none' : 'bm-effort-' + Math.min(4, lvl);
     return `<div class="flex items-center gap-2">
-      <span class="chip ${lvl === 0 ? 'hidden' : ''}" data-mus="${m}">${names[m] || m} <span class="bm-effort-dot ${effClass}" title="Effort ${lvl}/4"></span></span>
-      <span class="text-[11px] text-slate-500">${lvl === 0 ? 'not trained' : lvl === 1 ? 'light' : lvl === 2 ? 'moderate' : lvl === 3 ? 'hard' : 'maximal'}</span>
+      <span class="chip" data-mus="${m}">${names[m] || m} <span class="bm-effort-dot ${effClass}" title="Effort ${lvl}/4"></span></span>
+      <span class="text-[11px] text-slate-500">${lvl === 0 ? 'targeted · low or unscored contribution' : lvl === 1 ? 'light' : lvl === 2 ? 'moderate' : lvl === 3 ? 'hard' : 'maximal'}</span>
     </div>`;
   }).join('') || '<div class="text-[11px] text-slate-500">No muscles detected in the photo.</div>';
   $('#wk-estimated-box').classList.remove('hidden');
   $('#wk-estimated-box').innerHTML = box.innerHTML;
   // Seed the toggle set so the Save button logs the estimated muscles.
-  S.muscles = new Set(muscles.filter(function (m) { return effortByMuscle[m] > 0; }));
+  S.muscles = new Set(muscles);
   // Mirror chips into the workout form too.
   const form = $('#wk-muscles');
   form.innerHTML = muscles.map(function (m) {
-    const on = effortByMuscle[m] > 0;
+    const on = S.muscles.has(m);
     return `<span class="chip ${on ? 'on' : ''}" data-mus="${m}">${names[m] || m}</span>`;
   }).join('');
   // Mirror effort dots into the workout form where they are rendered later.
@@ -1515,23 +1515,43 @@ function swapMuscleSet(sourceEl, targetEl) {
   });
 }
 
+/** A local fallback also works before a newer Apps Script version is deployed. */
+function activityMuscleTargets(text) {
+  if (/\bfenc(?:ing|ed)\b/i.test(text || '')) return ['quads', 'glutes', 'hamstrings', 'calves',
+    'forearms', 'front-delts', 'side-delts', 'triceps', 'biceps', 'abs', 'obliques'];
+  return [];
+}
+
+function applyDetectedWorkout(result, text) {
+  const targets = [...new Set([...(result.muscles || []), ...activityMuscleTargets(text)]
+    .flatMap(m => m === 'shoulders' ? ['front-delts', 'side-delts', 'rear-delts'] : [m]))]
+    .filter(m => Object.prototype.hasOwnProperty.call(MUSCLE_LABELS, m));
+  if (!targets.length) return false;
+  S.muscles = new Set(targets);
+  $('#wk-muscles').querySelectorAll('[data-mus]').forEach(c => c.classList.toggle('on', S.muscles.has(c.dataset.mus)));
+  if (!$('#wk-name').value) $('#wk-name').value = result.workoutName || (activityMuscleTargets(text).length ? 'Fencing' : '');
+  if (result.durationMin && !$('#wk-dur').value) $('#wk-dur').value = result.durationMin;
+  return true;
+}
+
 async function autoDetectWorkout() {
   const text = $('#wk-input').value.trim();
-  if (!text || !S.url) return;
+  if (!text) return;
+  const fallback = activityMuscleTargets(text);
+  if (fallback.length) applyDetectedWorkout({}, text);
+  if (!S.url) return;
   try {
     const r = await api('parse', { text: text });
-    if (r.kind === 'workout') {
-      S.muscles.clear();
-      (r.muscles || []).flatMap(m => m === 'shoulders' ? ['front-delts', 'side-delts', 'rear-delts'] : [m]).filter(m => MUSCLE_LABELS[m]).forEach(m => S.muscles.add(m));
-      $('#wk-muscles').querySelectorAll('[data-mus]').forEach(c =>
-        c.classList.toggle('on', S.muscles.has(c.dataset.mus)));
-      if (!$('#wk-name').value) $('#wk-name').value = r.workoutName || '';
-      if (r.durationMin && !$('#wk-dur').value) $('#wk-dur').value = r.durationMin;
-      toast('Detected: ' + (r.muscles || []).join(', '), 'ok');
+    if ($('#wk-input').value.trim() !== text) return;
+    if (r.kind === 'workout' || fallback.length) {
+      if (applyDetectedWorkout(r, text)) toast('Targets: ' + Array.from(S.muscles).map(m => MUSCLE_LABELS[m]).join(', '), 'ok');
+      else toast('No muscle targets detected — select the groups you used', 'warn');
     } else if (r.kind === 'food' && r.foods && r.foods.length) {
       toast('That is food — switch to the Food tab', 'warn');
     }
-  } catch (e) { /* detection is best-effort */ }
+  } catch (e) {
+    if (fallback.length && $('#wk-input').value.trim() === text) toast('Fencing targets selected — review the muscle groups before saving', 'ok');
+  }
 }
 
 async function saveWorkout() {

@@ -144,6 +144,20 @@ async function main() {
     assert.equal(run('S.muscles.has("quads") && S.muscles.has("glutes")'), true);
     assert.equal(get('wk-muscles').querySelectorAll('.on').length, 2);
   });
+  test('zero-effort targeted muscles remain visible and selectable', () => {
+    run(`renderWkEstimate({muscles:['quads','forearms'], effort:[{muscle:'quads',level:1},{muscle:'forearms',level:0}]})`);
+    assert.equal(get('wk-estimated-box').querySelectorAll('.chip.hidden').length, 0);
+    assert.match(get('wk-estimated-box').textContent, /Forearms/);
+    assert.match(get('wk-estimated-box').textContent, /low or unscored/);
+    assert.equal(run('S.muscles.has("forearms")'), true);
+  });
+  test('fencing fallback repairs empty or incomplete model targets', () => {
+    run('applyDetectedWorkout({muscles:[]}, "fencing 20 minutes")');
+    assert.equal(run('S.muscles.has("quads") && S.muscles.has("forearms") && S.muscles.has("obliques")'), true);
+    run('applyDetectedWorkout({muscles:["quads"]}, "fencing")');
+    assert.equal(run('S.muscles.has("biceps")'), true);
+    assert.equal(run('activityMuscleTargets("ordinary unknown activity").length'), 0);
+  });
   test('legacy shoulders become three deltoid regions', () => {
     run('normaliseWorkoutState(S.data); renderBodyMap(document.getElementById("bodymap"), S.data.workouts.muscleStatus)');
     assert.equal(run('Object.keys(S.data.workouts.muscleStatus).length'), 17);
