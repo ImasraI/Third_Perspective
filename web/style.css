@@ -773,25 +773,25 @@ select.field option { background: var(--panel); color: var(--text); }
 }
 
 /* Reference anatomical chart */
-.bm-stage { background: #fff; border-radius: 16px; padding: 28px 12px 16px; overflow: hidden; }
+.bm-stage { background: transparent; border-radius: 0; padding: 28px 12px 16px; overflow: hidden; }
 .bm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
 .bm-flesh, .bm-joint { fill: #999a97; }
-.bm-shadow { fill: #f6f6f6; }
+.bm-shadow { fill: rgba(255, 255, 255, .035); }
 .bm-contour { stroke: #e6e6e4; stroke-width: 1.4; }
-.bm-labels text { fill: #252525; font-family: Arial, sans-serif; font-size: 9px; letter-spacing: -.2px; }
-.bm-lead { stroke: #333; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.bm-labels text { fill: var(--text); font-family: Arial, sans-serif; font-size: 9px; letter-spacing: -.2px; }
+.bm-lead { stroke: var(--text-dim); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .bm-region { fill: #999a97; stroke: #f4f4ef; stroke-width: 1.4; }
 .bm-region .bm-line { stroke: #f4f4ef; stroke-width: 1.4; }
 .bm-region.bm-effort-1, .bm-region.bm-effort-2 { fill: #ffdf00; }
 .bm-region.bm-effort-3 { fill: #f18925; }
 .bm-region.bm-effort-4 { fill: #d34270; }
 .bm-effort-levels { flex-direction: column; align-items: flex-start; gap: 5px; }
-.bm-effort-level { color: #252525; font-family: Arial, sans-serif; font-size: 11px; max-width: 135px; }
+.bm-effort-level { color: var(--text); font-family: Arial, sans-serif; font-size: 11px; max-width: 135px; }
 .bm-effort-dot { width: 24px; height: 24px; border-radius: 0; }
 .bm-effort-dot.bm-effort-1, .bm-effort-dot.bm-effort-2, .bm-key .dot.bm-effort-1, .bm-key .dot.bm-effort-2 { background: #ffdf00; }
 .bm-effort-dot.bm-effort-3, .bm-key .dot.bm-effort-3 { background: #f18925; }
 .bm-effort-dot.bm-effort-4, .bm-key .dot.bm-effort-4 { background: #d34270; }
-.bm-legend-title { color: #666; text-align: center; }
+.bm-legend-title { color: var(--text-dim); text-align: center; }
 .bm-effort-legend { margin-top: -48px; position: relative; pointer-events: none; }
 @media (max-width: 480px) {
   .bm-stage { padding: 18px 6px 12px; }
