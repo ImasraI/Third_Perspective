@@ -246,6 +246,52 @@ async function main() {
     assert.equal(get('chat-input').value,'My report');
   });
   run('S.data.capabilities={assistantUndo:true,assistantImages:true}');
+
+  let resolveDetection; let detectionCalls=0;
+  w.fetch=async()=>{detectionCalls++;return {ok:true,json:()=>new Promise(resolve=>{resolveDetection=resolve;})};};
+  get('wk-input').value='fencing 20 minutes';
+  const detecting=run('autoDetectWorkout()');
+  await new Promise(resolve=>w.setTimeout(resolve,0));
+  await run('autoDetectWorkout()');
+  test('unchanged workout shares one request and displays loading beside input', () => {
+    assert.equal(detectionCalls,1);assert.equal(get('wk-detect-status').dataset.state,'loading');
+    assert.ok(get('wk-detect-status').querySelector('.ai-spinner'));
+  });
+  resolveDetection({ok:true,kind:'workout',muscles:['quads'],durationMin:20});await detecting;
+  await run('autoDetectWorkout()');
+  test('completed unsaved workout is not detected again', () => {
+    assert.equal(detectionCalls,1);assert.equal(get('wk-detect-status').dataset.state,'ready');
+    assert.equal(get('wk-detect-status').querySelector('.ai-spinner'),null);
+  });
+  w.fetch=async()=>{detectionCalls++;throw new Error('Model unavailable');};
+  get('wk-input').value='new workout';await run('autoDetectWorkout()');await run('autoDetectWorkout()');
+  test('failed detection stays failed without automatic repeated scans', () => {
+    assert.equal(detectionCalls,2);assert.equal(get('wk-detect-status').dataset.state,'error');
+    assert.match(get('wk-detect-status').textContent,/Model unavailable/);
+  });
+  await run('autoDetectWorkout(true)');
+  test('explicit retry starts one new detection', () => {assert.equal(detectionCalls,3);});
+  w.fetch=async()=>({ok:true,json:async()=>({ok:true,kind:'workout',muscles:[]})});
+  get('wk-input').value='unknown exercise';await run('autoDetectWorkout()');
+  test('empty detection has an explicit no-targets status', () => {assert.equal(get('wk-detect-status').dataset.state,'empty');});
+  w.fetch=async()=>({ok:true,json:()=>new Promise(resolve=>{resolveDetection=resolve;})});
+  get('wk-input').value='bench press';const stale=run('autoDetectWorkout()');
+  await new Promise(resolve=>w.setTimeout(resolve,0));
+  get('wk-input').value='squats';run('workoutInputChanged()');
+  resolveDetection({ok:true,kind:'workout',muscles:['chest']});await stale;
+  test('old response cannot overwrite status for newer workout text', () => {
+    assert.equal(get('wk-detect-status').dataset.state,'queued');
+    assert.doesNotMatch(get('wk-detect-status').textContent,/Chest/);
+  });
+  w.fetch=async()=>new Promise(()=>{});
+  await assert.rejects(run('aiRequest("parse",{text:"test"},5)'),/timed out/);
+  count++;console.log('✓ stalled AI request times out');
+  w.fetch=async()=>({ok:true,json:async()=>({ok:true,recognised:false,muscles:[],effort:[]})});
+  await run('estimateWorkoutMuscles()');
+  test('photo with no targets remains visibly empty after completion', () => {
+    assert.equal(get('wk-ai-status').dataset.state,'empty');assert.equal(get('wk-estimate').disabled,false);
+  });
+
   const chatCalls=[];
   w.fetch=async (url,options)=>{chatCalls.push(JSON.parse(options.body));return {ok:true,json:async()=>({ok:true,reply:'Saved your day',changes:['144 kcal food','45 min fencing'],failed:['Expense needs amount']})};};
   get('chat-input').value='I ate eggs and fenced';

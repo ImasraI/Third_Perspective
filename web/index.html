@@ -255,7 +255,7 @@
           </button>
         </div>
 
-        <div id="ai-status" class="hidden ai-pulse rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 flex items-center gap-2">
+        <div id="ai-status" role="status" aria-live="polite" class="hidden ai-pulse rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 flex items-center gap-2">
           <i data-lucide="loader" class="w-3.5 h-3.5 spin"></i> Asking Gemini for nutrition facts…
         </div>
 
@@ -376,6 +376,8 @@
         </h3>
         <div class="ac-wrap">
           <input id="wk-input" class="field" placeholder="e.g. bench press 80kg 4x10 and cable fly" />
+          <div id="wk-detect-status" class="ai-inline-status" role="status" aria-live="polite" data-state="idle">No workout entered.</div>
+          <button id="wk-detect-retry" type="button" class="btn btn-ghost btn-sm hidden">Detect again</button>
           <div id="wk-ac" class="ac-list hidden"></div>
         </div>
         <div class="grid grid-cols-2 gap-3">
@@ -412,7 +414,7 @@
               <i data-lucide="x" class="w-3.5 h-3.5"></i>
             </button>
           </div>
-          <div id="wk-ai-status" class="hidden ai-pulse rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 flex items-center gap-2">
+          <div id="wk-ai-status" role="status" aria-live="polite" class="hidden ai-pulse rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 flex items-center gap-2">
             <i data-lucide="loader" class="w-3.5 h-3.5 spin"></i> Asking Gemini for the muscles + effort…
           </div>
           <div id="wk-estimated-box" class="hidden space-y-2"></div>

@@ -59,11 +59,12 @@ function toast(msg, kind) {
 
 // POST with text/plain keeps this a "simple request", so no CORS preflight is
 // needed and Apps Script's ContentService answers work from any origin.
-async function api(action, payload) {
+async function api(action, payload, signal) {
   if (!S.url) throw new Error('No backend URL — open Settings first');
   const body = Object.assign({}, payload || {}, { action: action, appKey: S.key });
   const res = await fetch(S.url, {
     method: 'POST',
+    signal,
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(body)
   });
@@ -73,6 +74,24 @@ async function api(action, payload) {
   catch (e) { throw new Error('Backend did not return JSON. Check the Apps Script deployment URL and access settings.'); }
   if (json.ok === false) throw new Error(json.error || 'Request failed');
   return json;
+}
+
+// Inline AI feedback persists after completion, so an empty result differs from a failure.
+function setAIStatus(id, state, message) {
+  const el = $('#'+id); if (!el) return;
+  el.classList.remove('hidden', 'ai-pulse');
+  el.dataset.state = state;
+  el.setAttribute('aria-busy', String(state === 'loading'));
+  el.innerHTML = (state === 'loading' ? '<span class="ai-spinner" aria-hidden="true"></span>' : '<span class="ai-state-dot" aria-hidden="true"></span>') + '<span>'+esc(message)+'</span>';
+}
+async function aiRequest(action, payload, timeoutMs = 60000) {
+  const controller = new AbortController();
+  let timer;
+  try {
+    return await Promise.race([api(action, payload, controller.signal), new Promise((_, reject) => {
+      timer = setTimeout(() => { controller.abort(); reject(new Error('AI request timed out. Try again when the connection is stable.')); }, timeoutMs);
+    })]);
+  } finally { clearTimeout(timer); }
 }
 
 function setConn(state, label) {
@@ -1052,6 +1071,7 @@ function findCached(text) {
 }
 
 async function parseFood() {
+  if ($('#food-parse').disabled) return;
   if (S.photo) { await parsePhoto(); return; }
   const text = $('#food-input').value.trim();
   if (!text) { toast('Type a meal first', 'warn'); return; }
@@ -1061,16 +1081,18 @@ async function parseFood() {
   if (hit) {
     S.parsed = [hit];
     renderParsed();
+    setAIStatus('ai-status', 'ready', 'Loaded from library — no AI needed.');
     toast('Loaded from library — no AI needed', 'ok');
     return;
   }
 
   // 2) ask Gemini
-  $('#ai-status').classList.remove('hidden');
+  setAIStatus('ai-status', 'loading', 'Generating nutrition estimates…');
   $('#food-parse').disabled = true;
   try {
-    const r = await api('parse', { text: text });
+    const r = await aiRequest('parse', { text: text });
     if (r.kind !== 'food' || !r.foods || !r.foods.length) {
+      setAIStatus('ai-status', 'empty', 'No nutrition results found for this input.');
       if (r.kind === 'workout') {
         toast('That looks like a workout — review it in the Body tab', 'warn');
         switchTab('body');
@@ -1100,9 +1122,10 @@ async function parseFood() {
     renderParsed();
     toast(r.source === 'gemini' ? 'AI nutrition facts ready' : 'Parsed offline — fill the numbers in', r.source === 'gemini' ? 'ok' : 'warn');
   } catch (e) {
+    setAIStatus('ai-status', 'error', e.message);
     toast(e.message, 'err');
   } finally {
-    $('#ai-status').classList.add('hidden');
+    if ($('#ai-status').dataset.state === 'loading') setAIStatus('ai-status', S.parsed.length ? 'ready' : 'empty', S.parsed.length ? 'Nutrition estimates ready. Review before saving.' : 'No food results found.');
     $('#food-parse').disabled = false;
   }
 }
@@ -1162,11 +1185,12 @@ function onPhotoPicked(e) {
 
 async function parsePhoto() {
   const hint = $('#food-input').value.trim();
-  $('#ai-status').classList.remove('hidden');
+  setAIStatus('ai-status', 'loading', 'Generating nutrition estimates…');
   $('#food-parse').disabled = true;
   try {
-    const r = await api('parse.image', { image: S.photo, hint: hint });
+    const r = await aiRequest('parse.image', { image: S.photo, hint: hint });
     if (r.recognised === false || !r.foods || !r.foods.length) {
+      setAIStatus('ai-status', 'empty', r.note || 'No food recognised in this photo.');
       toast(r.note || 'I could not tell what is in this photo. Try a closer, well-lit shot.', 'warn');
       return;
     }
@@ -1177,9 +1201,10 @@ async function parsePhoto() {
       : 'Recognised ' + r.foods.length + ' item(s) from your photo',
       r.rough ? 'warn' : 'ok');
   } catch (e) {
+    setAIStatus('ai-status', 'error', e.message);
     toast(e.message, 'err');
   } finally {
-    $('#ai-status').classList.add('hidden');
+    if ($('#ai-status').dataset.state === 'loading') setAIStatus('ai-status', S.parsed.length ? 'ready' : 'empty', S.parsed.length ? 'Nutrition estimates ready. Review before saving.' : 'No food results found.');
     $('#food-parse').disabled = false;
   }
 }
@@ -1279,19 +1304,22 @@ function renderWkEstimate(r) {
 
 async function estimateWorkoutMuscles() {
   const hint = $('#wk-input').value.trim();
-  $('#wk-ai-status').classList.remove('hidden');
+  if ($('#wk-estimate').disabled) return;
+  setAIStatus('wk-ai-status', 'loading', 'Estimating muscles from your photo…');
   $('#wk-estimate').disabled = true;
   try {
-    const r = await api('parse.workout.image', { image: S.workoutPhoto, hint: hint });
-    if (!r.ok || r.recognised === false || (!r.muscles && !r.effort)) {
+    const r = await aiRequest('parse.workout.image', { image: S.workoutPhoto, hint: hint });
+    if (!r.ok || r.recognised === false || (!r.muscles?.length && !r.effort?.length)) {
+      setAIStatus('wk-ai-status', 'empty', r.note || 'No muscle targets found in this photo.');
       toast(r.note || (r.error || 'Could not estimate from that photo'), 'warn');
       return;
     }
     renderWkEstimate(r);
   } catch (e) {
+    setAIStatus('wk-ai-status', 'error', e.message);
     toast(e.message, 'err');
   } finally {
-    $('#wk-ai-status').classList.add('hidden');
+    if ($('#wk-ai-status').dataset.state === 'loading') setAIStatus('wk-ai-status', 'ready', 'Photo estimates ready. Review before saving.');
     $('#wk-estimate').disabled = false;
   }
 }
@@ -1535,23 +1563,41 @@ function applyDetectedWorkout(result, text) {
   return true;
 }
 
-async function autoDetectWorkout() {
+const workoutDetection = {text: '', revision: 0, attempted: -1};
+function workoutInputChanged() {
   const text = $('#wk-input').value.trim();
-  if (!text) return;
+  if (text === workoutDetection.text) return false;
+  workoutDetection.text = text;
+  workoutDetection.revision++;
+  setAIStatus('wk-detect-status', text ? 'queued' : 'idle', text ? 'Waiting for you to finish typing…' : 'No workout entered.');
+  $('#wk-detect-retry').classList.add('hidden');
+  return true;
+}
+async function autoDetectWorkout(force = false) {
+  workoutInputChanged();
+  const text = workoutDetection.text, revision = workoutDetection.revision;
+  if (!text || (!force && workoutDetection.attempted === revision)) return;
+  workoutDetection.attempted = revision;
   const fallback = activityMuscleTargets(text);
   if (fallback.length) applyDetectedWorkout({}, text);
-  if (!S.url) return;
+  if (!S.url) { setAIStatus('wk-detect-status', 'error', 'Backend unavailable. Choose muscles manually.'); return; }
+  const current = () => workoutDetection.revision === revision && $('#wk-input').value.trim() === text;
+  setAIStatus('wk-detect-status', 'loading', 'Detecting workout muscles…');
+  $('#wk-detect-retry').classList.add('hidden');
   try {
-    const r = await api('parse', { text: text });
-    if ($('#wk-input').value.trim() !== text) return;
+    const r = await aiRequest('parse', {text});
+    if (!current()) return;
     if (r.kind === 'workout' || fallback.length) {
-      if (applyDetectedWorkout(r, text)) toast('Targets: ' + Array.from(S.muscles).map(m => MUSCLE_LABELS[m]).join(', '), 'ok');
-      else toast('No muscle targets detected — select the groups you used', 'warn');
-    } else if (r.kind === 'food' && r.foods && r.foods.length) {
-      toast('That is food — switch to the Food tab', 'warn');
+      const found = applyDetectedWorkout(r, text);
+      setAIStatus('wk-detect-status', found ? 'ready' : 'empty', found ? 'Targets ready: '+Array.from(S.muscles).map(m => MUSCLE_LABELS[m]).join(', ') : 'No muscle targets found. Select the muscles manually.');
+    } else {
+      setAIStatus('wk-detect-status', 'empty', r.kind === 'food' ? 'This looks like food. Use the Food panel.' : 'No workout targets found. Select the muscles manually.');
     }
   } catch (e) {
-    if (fallback.length && $('#wk-input').value.trim() === text) toast('Fencing targets selected — review the muscle groups before saving', 'ok');
+    if (!current()) return;
+    setAIStatus('wk-detect-status', 'error', e.message + (fallback.length ? ' Fencing fallback targets are selected.' : ' You can select muscles manually.'));
+  } finally {
+    if (current()) $('#wk-detect-retry').classList.remove('hidden');
   }
 }
 
@@ -1569,7 +1615,7 @@ async function saveWorkout() {
     toast('Workout saved — nice work 💪');
     S.muscles.clear();
     document.querySelectorAll('[data-mus]').forEach(c => c.classList.remove('on'));
-    $('#wk-input').value = ''; $('#wk-name').value = ''; $('#wk-dur').value = '';
+    $('#wk-input').value = ''; workoutInputChanged(); $('#wk-name').value = ''; $('#wk-dur').value = '';
     await load();
   } catch (e) {
     toast(e.message, 'err');
@@ -1643,7 +1689,8 @@ function bind() {
       $('#food-input').value = f.name;
       hideAc('#food-ac');
       renderParsed();
-      toast('Loaded from library — no AI needed', 'ok');
+      setAIStatus('ai-status', 'ready', 'Loaded from library — no AI needed.');
+    toast('Loaded from library — no AI needed', 'ok');
     });
   });
   $('#food-input').addEventListener('keydown', (e) => {
@@ -1719,8 +1766,10 @@ function bind() {
   $('#wk-photo-clear').addEventListener('click', clearWkPhoto);
   $('#wk-estimate').addEventListener('click', estimateWorkoutMuscles);
   $('#wk-save').addEventListener('click', saveWorkout);
+  $('#wk-detect-retry').addEventListener('click', () => autoDetectWorkout(true));
   let wkTimer;
   $('#wk-input').addEventListener('input', () => {
+    if (!workoutInputChanged()) return;
     clearTimeout(wkTimer);
     wkTimer = setTimeout(autoDetectWorkout, 900);
   });
@@ -2209,12 +2258,12 @@ async function sendChat(e) {
   if(!S.data?.capabilities?.assistantUndo){$('#chat-status').textContent='Update and redeploy Code.js in Apps Script, then refresh, to enable chat with undo.';return;}
   if(CHAT.scope!==chatStorageKey()){CHAT.messages=[];CHAT.older=[];CHAT.scope=chatStorageKey();renderChat();}
   stopDictation();const text=$('#chat-input').value.trim();if(!text&&!CHAT.image)return;
-  CHAT.busy=true;$('#chat-send').disabled=true;$('#chat-input').readOnly=true;['chat-image','chat-mic','chat-photo-clear'].forEach(id=>$('#'+id).disabled=true);$('#chat-status').textContent='Reading your report and saving changes…';
+  CHAT.busy=true;$('#chat-send').disabled=true;$('#chat-input').readOnly=true;['chat-image','chat-mic','chat-photo-clear'].forEach(id=>$('#'+id).disabled=true);setAIStatus('chat-status','loading','Reading your report and saving changes…');
   const history=CHAT.messages.slice(-8).map(m=>({role:m.role,text:m.text}));
   const image=CHAT.image;
   try{
     const scope=CHAT.scope;
-    const r=await api('chat',{message:text,image,history});
+    const r=await aiRequest('chat',{message:text,image,history});
     if(scope!==chatStorageKey())throw new Error('Backend settings changed while processing. Review the original backend’s history.');
     CHAT.messages.push({role:'user',text:text+(image?'\n[Photo attached]':'')});
     const changed=r.changes || r.applied || [];
@@ -2222,8 +2271,8 @@ async function sendChat(e) {
     CHAT.messages.push({role:'assistant',text:lines.filter(Boolean).join('\n\n')});renderChat();
     $('#chat-input').value='';clearChatPhoto();
     await load({background:true});
-    $('#chat-status').textContent='Report processed. Review the change history or undo in the relevant panel.';
-  }catch(err){$('#chat-status').textContent=err.message+' Your message is still here. If the connection dropped, refresh and review history before retrying.';}
+    setAIStatus('chat-status',changed.length?'ready':'empty',changed.length?'Changes saved. Review or undo in the relevant panel.':'No changes saved. Check the assistant’s reply.');
+  }catch(err){setAIStatus('chat-status','error',err.message+' Your message is still here. If the connection dropped, refresh and review history before retrying.');}
   finally{CHAT.busy=false;$('#chat-send').disabled=false;$('#chat-input').readOnly=false;['chat-image','chat-mic','chat-photo-clear'].forEach(id=>$('#'+id).disabled=false);}
 }
 function clearChatPhoto(){CHAT.image=null;$('#chat-image').value='';$('#chat-photo').removeAttribute('src');$('#chat-photo-preview').classList.add('hidden');}
