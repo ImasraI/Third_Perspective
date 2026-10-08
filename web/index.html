@@ -75,6 +75,7 @@
         <button class="tab-btn" data-tab="money" title="Money"><i data-lucide="wallet"></i></button>
         <button class="tab-btn" data-tab="study" title="Study"><i data-lucide="book-open"></i></button>
         <button class="tab-btn" data-tab="tasks" title="Tasks"><i data-lucide="list-checks"></i></button>
+        <button class="tab-btn" data-tab="chat" title="Daily assistant"><i data-lucide="message-circle"></i></button>
         <button class="tab-btn" data-tab="more" title="More"><i data-lucide="calendar-days"></i></button>
         <div class="vs-activity-bottom">
           <button id="refresh-btn" title="Refresh"><i data-lucide="refresh-cw" id="refresh-icon"></i></button>
@@ -85,6 +86,27 @@
       <!-- ===================== EDITOR ===================== -->
       <main class="vs-editor">
         <div class="vs-scroll">
+
+    <section class="tab-panel space-y-6 hidden" id="panel-chat">
+      <div class="glass-card rounded-3xl p-6 space-y-4">
+        <h2 class="text-xl font-bold">Daily assistant</h2>
+        <p class="text-sm text-slate-400">Tell me about your day: meals, exercise, spending, study, tasks or classes. Type, dictate, or attach a photo. I’ll show each saved change below.</p>
+        <div id="chat-messages" class="chat-messages" role="log" aria-live="polite"></div>
+        <form id="chat-form" class="space-y-3">
+          <label for="chat-input" class="label">Your message</label>
+          <textarea id="chat-input" class="field" rows="4" maxlength="24000" placeholder="I ate two eggs, fenced for 45 minutes, spent 12 on lunch and studied maths for an hour…"></textarea>
+          <div id="chat-photo-preview" class="hidden"><img id="chat-photo" alt="Attached photo" /><button type="button" id="chat-photo-clear" class="btn btn-ghost">Remove photo</button></div>
+          <div class="chat-controls">
+            <button type="button" id="chat-mic" class="btn btn-ghost" aria-pressed="false">Start dictation</button>
+            <label class="btn btn-ghost" for="chat-image">Attach photo</label>
+            <input id="chat-image" type="file" accept="image/*" class="hidden" />
+            <button id="chat-send" type="submit" class="btn btn-primary">Send</button>
+          </div>
+          <p id="chat-status" class="text-sm text-slate-400" role="status">Review your dictation before sending. Nutrition estimates can be corrected in Food.</p>
+        </form>
+      </div>
+      <div class="glass-card rounded-3xl p-6 space-y-3"><h3 class="font-bold">Change history</h3><div data-change-panel="all"></div><button id="chat-history-more" class="btn btn-ghost">Load older changes</button></div>
+    </section>
 
     <!-- ===================== TODAY ===================== -->
     <section class="tab-panel space-y-6" id="panel-today">

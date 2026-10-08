@@ -116,6 +116,7 @@ function makeSandbox(opts) {
       fetch(url, o) {
         if (url.includes('generativelanguage')) {
           calls.gemini++;
+          calls.parts=JSON.parse(o.payload).contents[0].parts;
           sent.push(url);
           // Google retires model ids (404) and overloads them (503). Let a test
           // name the ids that fail so the fallback chain gets exercised.
@@ -596,6 +597,61 @@ section('[13] doGet health check + JSON safety');
 }
 
 // ===========================================================================
+
+section('[14] daily assistant and persistent undo');
+{
+  const sb=makeSandbox({geminiResponse:{reply:'Recorded your day.',understood:true,actions:[
+    {action:'log.food',items:[{name:'egg',qty:2,unit:'egg',calories:144,protein:12,carbs:1,fat:10}]},
+    {action:'log.workout',name:'Fencing',exercises:'fencing 45 minutes',durationMin:45,muscles:['quads','forearms']},
+    {action:'log.expense',amount:12,category:'Food',merchant:'Lunch'},
+    {action:'log.study',subject:'Math',minutes:60}
+  ]}});
+  const result=call(sb,{action:'chat',message:'My day: eggs, fencing, lunch and maths.'});
+  check('daily report writes all four categories',result.applied.length===4 && result.failed.length===0,JSON.stringify(result));
+  let state=call(sb,{action:'state'});
+  check('each assistant change has persistent undo',state.changes.length===4);
+  check('food summary includes calories',result.applied[0].includes('144 kcal'));
+  check('workout summary includes supporting muscles',result.applied[1].includes('forearms'));
+  const food=state.changes.find(c=>c.panel==='Nutrition');
+  call(sb,{action:'log.expense',amount:5});
+  check('undo unrelated later changes is safe',call(sb,{action:'changes.undo',id:food.id}).ok);
+  check('nutrition totals revert',call(sb,{action:'state'}).nutrition.today.calories===0);
+  check('repeat undo is refused',call(sb,{action:'changes.undo',id:food.id}).ok===false);
+  const ex=call(sb,{action:'state'}).changes.find(c=>c.panel==='Expenses');
+  call(sb,{action:'entry.edit',sheet:'Expenses',rowId:3,fields:{amount:7}});
+  check('undo detects later edits',call(sb,{action:'changes.undo',id:ex.id}).ok===false);
+  const edit=call(sb,{action:'state'}).changes[0];
+  check('edit itself is undoable',call(sb,{action:'changes.undo',id:edit.id}).ok);
+  check('restored entry can be undone',call(sb,{action:'changes.undo',id:ex.id}).ok);
+  const goal=call(sb,{action:'goals.save',calories:2300});
+  check('goal change journaled',!!goal.changeId);
+  check('goals revert',call(sb,{action:'changes.undo',id:goal.changeId}).ok && call(sb,{action:'state'}).goals.calories!==2300);
+  const deleted=call(sb,{action:'entry.delete',sheet:'Expenses',rowId:2});
+  check('deletion restores original row',call(sb,{action:'changes.undo',id:deleted.changeId}).ok && call(sb,{action:'state'}).expenses.monthTotal===12);
+  check('history records undone state',call(sb,{action:'state'}).changes.find(c=>c.id===food.id).undone);
+  check('invalid edits are rejected before writing',!call(sb,{action:'entry.edit',sheet:'Study',rowId:2,fields:{minutes:-2}}).ok);
+  const ask=makeSandbox({geminiResponse:{reply:'How long?',understood:true,question:'How long?',pending:'workout',actions:[{action:'log.expense',amount:99}]}});
+  check('clarification performs no writes',call(ask,{action:'chat',message:'I fenced'}).applied.length===0 && call(ask,{action:'state'}).expenses.monthTotal===0);
+  const bad=makeSandbox({geminiResponse:{reply:'Done',understood:true,actions:[{action:'log.expense',amount:-4}]}});
+  check('invalid AI amounts fail visibly',call(bad,{action:'chat',message:'expense'}).failed.length===1);
+  const photo=makeSandbox({geminiResponse:{reply:'Photo read',understood:true,actions:[]}});
+  check('photo-only conversation accepted',call(photo,{action:'chat',image:'data:image/jpeg;base64,YWJj'}).ok);
+  check('photo is passed to the model as image data',photo.calls.parts[1].inlineData.data==='YWJj');
+  check('invalid images rejected',!call(photo,{action:'chat',image:'not an image'}).ok);
+
+  const shifted=makeSandbox({geminiResponse:{reply:'Removed both.',understood:true,actions:[{action:'delete',sheet:'Expenses',rowId:2},{action:'delete',sheet:'Expenses',rowId:3}]}});
+  call(shifted,{action:'log.expense',amount:10});call(shifted,{action:'log.expense',amount:20});call(shifted,{action:'log.expense',amount:30});
+  const batch=call(shifted,{action:'chat',message:'Delete the first two expenses'});
+  check('multiple deletes follow entries despite shifting row numbers',batch.applied.length===2 && call(shifted,{action:'state'}).expenses.monthTotal===30);
+  const many=makeSandbox();
+  for(let i=0;i<103;i++)call(many,{action:'log.study',subject:'Subject '+i,minutes:1});
+  check('old changes remain accessible through history pagination',call(many,{action:'changes.list',offset:100}).changes.length===3);
+  const old=call(many,{action:'changes.list',offset:100}).changes[0];
+  check('old additions undo without disturbing newer entries',call(many,{action:'changes.undo',id:old.id}).ok && call(many,{action:'state'}).study.todayMinutes===102);
+  const locked=makeSandbox({props:{APP_KEY:'private'}});
+  check('undo requires backend authorization',!call(locked,{action:'changes.undo',id:'anything'}).ok);
+}
+
 console.log('\n=== ' + pass + ' passed, ' + fail + ' failed ===');
 if (fail) { console.log('\nFailures:'); failures.forEach(f => console.log('  - ' + f)); }
 process.exit(fail ? 1 : 0);

@@ -227,6 +227,54 @@ async function main() {
   await assert.rejects(run('S.url = "https://script.google.com/macros/s/test/exec"; fetch = async () => ({ok: true, json: async () => { throw new Error() }}); api("state")'), /did not return JSON/);
   count++; console.log('✓ non-JSON backend responses have an actionable error');
 
+
+  test('assistant panel opens and undo histories exist in every panel', () => {
+    run('switchTab("chat")');
+    assert.equal(get('panel-chat').classList.contains('hidden'),false);
+    for(const tab of ['today','food','body','money','study','tasks','more'])assert.ok(get('panel-'+tab).querySelector('[data-change-panel]'));
+  });
+  run('S.data.changes=[{id:"change-1",time:new Date().toISOString(),panel:"Nutrition",summary:"Logged <img src=x onerror=alert(1)>",undone:false}]; renderChanges()');
+  test('history escapes stored content and offers panel undo', () => {
+    const history=get('panel-food').querySelector('[data-change-panel]');
+    assert.equal(history.querySelector('img'),null);
+    assert.equal(history.querySelector('[data-undo-change]').dataset.undoChange,'change-1');
+  });
+  get('chat-input').value='My report';
+  await run('sendChat()');
+  test('chat requires the undo-capable backend before writing', () => {
+    assert.match(get('chat-status').textContent,/redeploy Code.js/);
+    assert.equal(get('chat-input').value,'My report');
+  });
+  run('S.data.capabilities={assistantUndo:true,assistantImages:true}');
+  const chatCalls=[];
+  w.fetch=async (url,options)=>{chatCalls.push(JSON.parse(options.body));return {ok:true,json:async()=>({ok:true,reply:'Saved your day',changes:['144 kcal food','45 min fencing'],failed:['Expense needs amount']})};};
+  get('chat-input').value='I ate eggs and fenced';
+  await run('sendChat()');
+  test('chat sends text and renders saved changes and failures', () => {
+    assert.equal(chatCalls[0].action,'chat');assert.equal(chatCalls[0].message,'I ate eggs and fenced');
+    assert.match(get('chat-messages').textContent,/144 kcal/);assert.match(get('chat-messages').textContent,/Expense needs amount/);
+    assert.equal(get('chat-input').value,'');assert.equal(get('chat-send').disabled,false);
+  });
+  test('chat photo accompanies text and clears after successful send', () => {
+    run('CHAT.image="data:image/jpeg;base64,YWJj"');
+  });
+  await run('sendChat()');
+  assert.equal(chatCalls.at(-1).image,'data:image/jpeg;base64,YWJj');assert.equal(run('CHAT.image'),null);
+  w.fetch=async()=>{throw new Error('Network down');};get('chat-input').value='Keep this report';
+  await run('sendChat()');
+  test('failed chat retains draft and explains retry review', () => {
+    assert.equal(get('chat-input').value,'Keep this report');assert.match(get('chat-status').textContent,/review history before retrying/);
+  });
+  class Recognition {
+    start(){this.started=true;}stop(){this.stopped=true;}
+  }
+  w.SpeechRecognition=Recognition;
+  run('startDictation(); CHAT.recognition.onresult({resultIndex:0,results:[Object.assign([{transcript:"fencing for 45 minutes"}],{isFinal:true})]}); stopDictation();');
+  test('voice dictation appends transcript without automatically saving', () => {
+    assert.match(get('chat-input').value,/fencing for 45 minutes/);
+    assert.equal(run('CHAT.recording'),false);assert.equal(get('chat-mic').getAttribute('aria-pressed'),'false');
+  });
+
   const events = {};
   const sw = { URL, Promise, self: { location: { origin: 'https://example.com' }, addEventListener: (type, fn) => events[type] = fn } };
   vm.runInNewContext(fs.readFileSync(path.join(web, 'sw.js'), 'utf8'), sw);

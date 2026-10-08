@@ -6,7 +6,7 @@
    up on the very next load — the old stale-while-revalidate copy kept serving a
    broken app.js (dead buttons) on devices that had already visited the site.
    The cache is only the offline fallback now. */
-const CACHE_NAME = 'thirdperspective-v12';
+const CACHE_NAME = 'thirdperspective-v13';
 const ASSETS = [
   './',
   './index.html',

@@ -172,6 +172,7 @@ function render() {
   if (S.calendar) renderCalendar(); else renderMarkPanel();
   renderGoals(d);
   drawCharts(d);
+  renderChanges();
 }
 
 function pct(v, goal) { return goal > 0 ? Math.min(100, (v / goal) * 100) : 0; }
@@ -2141,6 +2142,7 @@ async function sendTestNotification() {
 document.addEventListener('DOMContentLoaded', async () => {
   lucide.createIcons();
   bind();
+  bindChat();
   switchTab(readSetting(LS.tab) || 'today');
 
   const now = new Date();
@@ -2166,3 +2168,77 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   else { switchTab('today'); $('#settings-modal').classList.remove('hidden'); }
 });
+
+
+const CHAT = {messages:[], image:null, busy:false, recognition:null, recording:false, until:0, scope:null, older:[]};
+function chatStorageKey() { return 'gt.chat.'+S.url+'|'+S.key; }
+function renderChat() {
+  $('#chat-messages').innerHTML = CHAT.messages.map(m => '<div class="chat-message '+(m.role==='user'?'chat-user':'chat-assistant')+'"><strong>'+ (m.role==='user'?'You':'Assistant')+'</strong><p>'+esc(m.text)+'</p></div>').join('');
+  $('#chat-messages').scrollTop = $('#chat-messages').scrollHeight;
+  saveSetting(chatStorageKey(),JSON.stringify(CHAT.messages.slice(-60)));
+}
+function renderChanges() {
+  const changes = [...(S.data?.changes || []),...CHAT.older].filter((c,i,list)=>list.findIndex(x=>x.id===c.id)===i);
+  $$('[data-change-panel]').forEach(el => {
+    const panel = el.dataset.changePanel;
+    const list=changes.filter(c=>panel==='all'||c.panel===panel|| (panel==='Tasks' && c.panel==='Goals')).slice(0,panel==='all'?changes.length:12);
+    el.innerHTML=list.length?list.map(c=>'<div class="change-row"><span>'+esc(c.summary)+'<small>'+esc(new Date(c.time).toLocaleString())+'</small></span><button class="btn btn-ghost btn-sm" data-undo-change="'+esc(c.id)+'" '+(c.undone?'disabled':'')+'>'+(c.undone?'Undone':'Undo')+'</button></div>').join(''):'<p class="text-sm text-slate-400">No saved changes yet.</p>';
+  });
+}
+function stopDictation() {
+  CHAT.recording=false; clearTimeout(CHAT.timer);
+  if(CHAT.recognition)CHAT.recognition.stop();
+  $('#chat-mic').textContent='Start dictation';$('#chat-mic').setAttribute('aria-pressed','false');
+}
+function startDictation() {
+  if(CHAT.recording){stopDictation();return;}
+  const Recognition=window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!Recognition){$('#chat-status').textContent='Voice dictation is unavailable in this browser. Use your keyboard’s microphone or type here.';return;}
+  const r=new Recognition(); CHAT.recognition=r; CHAT.recording=true;CHAT.until=Date.now()+5*60*1000;
+  r.continuous=true;r.interimResults=true;r.lang=navigator.language || 'en-US';
+  r.onresult=e=>{
+    for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)$('#chat-input').value+= ( $('#chat-input').value?' ':'')+e.results[i][0].transcript;
+    $('#chat-status').textContent='Listening… '+Array.from(e.results).filter(x=>!x.isFinal).map(x=>x[0].transcript).join(' ');
+  };
+  r.onerror=e=>{CHAT.recording=false;$('#chat-status').textContent='Dictation stopped: '+e.error+'. You can still edit and send your text.';stopDictation();};
+  r.onend=()=>{if(CHAT.recording && Date.now()<CHAT.until){try{r.start();}catch(e){stopDictation();}}else stopDictation();};
+  try{r.start();CHAT.timer=setTimeout(stopDictation,5*60*1000);$('#chat-mic').textContent='Stop dictation';$('#chat-mic').setAttribute('aria-pressed','true');$('#chat-status').textContent='Listening for up to five minutes. Stop and review before sending.';}catch(e){stopDictation();$('#chat-status').textContent=e.message;}
+}
+async function sendChat(e) {
+  e?.preventDefault();if(CHAT.busy)return;
+  if(!S.data?.capabilities?.assistantUndo){$('#chat-status').textContent='Update and redeploy Code.js in Apps Script, then refresh, to enable chat with undo.';return;}
+  if(CHAT.scope!==chatStorageKey()){CHAT.messages=[];CHAT.older=[];CHAT.scope=chatStorageKey();renderChat();}
+  stopDictation();const text=$('#chat-input').value.trim();if(!text&&!CHAT.image)return;
+  CHAT.busy=true;$('#chat-send').disabled=true;$('#chat-input').readOnly=true;['chat-image','chat-mic','chat-photo-clear'].forEach(id=>$('#'+id).disabled=true);$('#chat-status').textContent='Reading your report and saving changes…';
+  const history=CHAT.messages.slice(-8).map(m=>({role:m.role,text:m.text}));
+  const image=CHAT.image;
+  try{
+    const scope=CHAT.scope;
+    const r=await api('chat',{message:text,image,history});
+    if(scope!==chatStorageKey())throw new Error('Backend settings changed while processing. Review the original backend’s history.');
+    CHAT.messages.push({role:'user',text:text+(image?'\n[Photo attached]':'')});
+    const changed=r.changes || r.applied || [];
+    const lines=[r.reply || 'No changes were recorded.',r.question && r.question!==r.reply?r.question:'',changed.length?'Saved changes:\n'+changed.map(x=>'• '+x).join('\n'):'No changes saved.',r.failed?.length?'Could not save:\n'+r.failed.join('\n'):''];
+    CHAT.messages.push({role:'assistant',text:lines.filter(Boolean).join('\n\n')});renderChat();
+    $('#chat-input').value='';clearChatPhoto();
+    await load({background:true});
+    $('#chat-status').textContent='Report processed. Review the change history or undo in the relevant panel.';
+  }catch(err){$('#chat-status').textContent=err.message+' Your message is still here. If the connection dropped, refresh and review history before retrying.';}
+  finally{CHAT.busy=false;$('#chat-send').disabled=false;$('#chat-input').readOnly=false;['chat-image','chat-mic','chat-photo-clear'].forEach(id=>$('#'+id).disabled=false);}
+}
+function clearChatPhoto(){CHAT.image=null;$('#chat-image').value='';$('#chat-photo').removeAttribute('src');$('#chat-photo-preview').classList.add('hidden');}
+function bindChat() {
+  CHAT.scope=chatStorageKey();
+  try{const saved=JSON.parse(readSetting(chatStorageKey())||'[]');if(Array.isArray(saved))CHAT.messages=saved.filter(m=>m && ['user','assistant'].includes(m.role)&&typeof m.text==='string').slice(-60);}catch(e){}
+  renderChat();
+  const panels={today:'all',food:'Nutrition',body:'Workouts',money:'Expenses',study:'Study',tasks:'Tasks',more:'Classes'};
+  Object.entries(panels).forEach(([tab,panel])=>{const card=document.createElement('div');card.className='glass-card rounded-3xl p-6 space-y-3';card.innerHTML='<h3 class="font-bold">Recent changes · Undo</h3><div data-change-panel="'+panel+'"></div><button class="btn btn-ghost btn-sm" data-tab="chat">View full change history</button>';$('#panel-'+tab).appendChild(card);});
+  // Goals can be reverted alongside their settings.
+  const goalCard=document.createElement('div');goalCard.dataset.changePanel='Goals';$('#panel-more').appendChild(goalCard);
+  $('#chat-form').addEventListener('submit',sendChat);$('#chat-mic').addEventListener('click',startDictation);
+  $('#chat-photo-clear').addEventListener('click',clearChatPhoto);
+  $('#chat-image').addEventListener('change',e=>{const file=e.target.files?.[0];if(!file)return;if(!file.type.startsWith('image/')){toast('Choose an image','err');return;}const reader=new FileReader();reader.onerror=()=>toast('Could not read image','err');reader.onload=()=>preparePhoto(reader.result,image=>{CHAT.image=image;$('#chat-photo').src=image;$('#chat-photo-preview').classList.remove('hidden');});reader.readAsDataURL(file);});
+  document.addEventListener('click',async e=>{const btn=e.target.closest('[data-undo-change]');if(!btn)return;btn.disabled=true;try{await api('changes.undo',{id:btn.dataset.undoChange});CHAT.older.forEach(c=>{if(c.id===btn.dataset.undoChange)c.undone=true;});await load({background:true});toast('Change undone','ok');}catch(err){toast(err.message,'err');btn.disabled=false;}});
+  $('#chat-history-more').addEventListener('click',async()=>{const btn=$('#chat-history-more');btn.disabled=true;try{const r=await api('changes.list',{offset:100+CHAT.older.length});CHAT.older.push(...r.changes);renderChanges();btn.classList.toggle('hidden',!r.more);}catch(e){toast(e.message,'err');}finally{btn.disabled=false;}});
+  window.addEventListener('pagehide',stopDictation);
+}

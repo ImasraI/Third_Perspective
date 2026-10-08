@@ -802,3 +802,16 @@ select.field option { background: var(--panel); color: var(--text); }
 }
 
 .bm-labels text { font-size: 10px; }
+
+.chat-messages { max-height: 55vh; overflow-y: auto; display: grid; gap: 14px; }
+.chat-message { padding: 16px; border: 1px solid #484139; border-radius: 10px; background: #27231f; }
+.chat-user { margin-left: 8%; border-color: #9e5d29; }
+.chat-assistant { margin-right: 8%; }
+.chat-message p { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; }
+.chat-controls { display: flex; flex-wrap: wrap; gap: 10px; }
+#chat-input { resize: vertical; min-height: 110px; }
+#chat-photo { max-height: 180px; max-width: 100%; border-radius: 8px; }
+.change-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid #484139; overflow-wrap: anywhere; }
+.change-row small { display: block; color: #a9a196; margin-top: 4px; }
+.change-row button { flex-shrink: 0; }
+button:disabled { opacity: .55; cursor: default; }
