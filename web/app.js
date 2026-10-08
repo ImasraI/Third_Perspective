@@ -205,7 +205,18 @@ function setRing(id, r, value, goal) {
 
 function renderRings(d) {
   const n = d.nutrition.today, g = d.goals;
-  const left = Math.max(0, g.calories - n.calories);
+  const burned=Number(d.workouts.todayBurned) || (d.workouts.today || []).reduce((sum,w)=>sum+(Number(w.kcal)||0),0);
+  const net=n.calories-burned;
+  const left = Math.max(0, g.calories - net);
+  $('#calorie-balance').textContent=fmt(n.calories)+' food − '+fmt(burned)+' exercise = '+fmt(net)+' net kcal';
+  $('#calorie-balance').title='Exercise calories are estimated above resting metabolism.';
+  const grossPct=pct(n.calories,g.calories), netPct=pct(Math.max(0,net),g.calories);
+  $('#bar-cal-burn').style.left=netPct+'%';
+  $('#bar-cal-burn').style.width=Math.max(0,grossPct-netPct)+'%';
+  const circumference=2*Math.PI*82, segment=(grossPct-netPct)/100*circumference;
+  $('#ring-calorie-burn').setAttribute('stroke-dasharray',segment.toFixed(1)+' '+circumference.toFixed(1));
+  $('#ring-calorie-burn').setAttribute('stroke-dashoffset',(-netPct/100*circumference).toFixed(1));
+  $('#ring-calorie-burn').style.opacity=segment>0?'1':'0';
   $('#center-cal').textContent = fmt(left);
   $('#stat-cal').textContent = fmt(n.calories);
   $('#goal-cal').textContent = fmt(g.calories);
@@ -213,7 +224,7 @@ function renderRings(d) {
   $('#goal-pro').textContent = fmt(g.protein);
   $('#macro-split').textContent =
     'P ' + fmt(n.protein) + ' · C ' + fmt(n.carbs) + ' · F ' + fmt(n.fat);
-  $('#bar-cal').style.width = pct(n.calories, g.calories) + '%';
+  $('#bar-cal').style.width = netPct + '%';
   $('#bar-pro').style.width = pct(n.protein, g.protein) + '%';
 
   const e = d.expenses;
@@ -221,7 +232,7 @@ function renderRings(d) {
   $('#goal-spend').textContent = fmt(e.monthBudget);
   $('#bar-spend').style.width = pct(e.monthTotal, e.monthBudget) + '%';
 
-  setRing('#ring-calorie', 82, n.calories, g.calories);
+  setRing('#ring-calorie', 82, Math.max(0,net), g.calories);
   setRing('#ring-protein', 64, n.protein, g.protein);
   setRing('#ring-budget', 46, e.todayTotal, Math.max(1, e.monthBudget / 30));
 
@@ -367,7 +378,8 @@ function renderWorkoutLog(d) {
       <span class="font-mono text-[10px] text-slate-500 w-10">${esc(w.date.slice(5))}</span>
       <div class="flex-1 min-w-0">
         <div class="text-sm font-semibold text-slate-100">${esc(w.name)}</div>
-        <div class="text-[11px] text-slate-500 font-mono">${w.durationMin ? w.durationMin + 'm · ' : ''}${esc(w.exercises || '')}</div>
+        <div class="text-[11px] text-slate-500 font-mono">${w.durationMin ? w.durationMin + 'm · ' : ''}${esc(w.exercises || '')}
+          <span class="workout-energy">${w.kcal !== undefined ? fmt(w.kcal)+' kcal active burned (estimate)' : 'Update Apps Script for calorie estimates'}</span></div>
         <div class="flex flex-wrap gap-1 mt-1">${[...new Set([...(w.muscles || []), ...activityMuscleTargets((w.name || '') + ' ' + (w.exercises || ''))])].map(m =>
           `<span class="badge badge-cache">${esc(m)}</span>`).join('')}</div>
       </div>
@@ -768,10 +780,14 @@ function renderGoals(d) {
   if (!$('#g-fat').dataset.touched) $('#g-fat').value = d.goals.fat;
   if (!$('#g-study').dataset.touched) $('#g-study').value = d.goals.studyMinutes;
   if (!$('#g-budget').dataset.touched) $('#g-budget').value = d.goals.monthBudget;
+  if (!$('#g-weight').dataset.touched) $('#g-weight').value=d.goals.bodyWeightKg || 70;
   if (!$('#g-currency').dataset.touched) $('#g-currency').value = d.goals.currency || '';
 }
 
 function drawCharts(d) {
+  const signature=JSON.stringify([d.expenses.byCategory,d.study.week]);
+  if(drawCharts.signature===signature)return;
+  drawCharts.signature=signature;
   const cat = Object.keys(d.expenses.byCategory).map(k => ({ k, v: d.expenses.byCategory[k] }));
   if (S.charts.exp) S.charts.exp.destroy();
   S.charts.exp = new Chart($('#expenseChart'), {
@@ -972,34 +988,34 @@ function renderParsed() {
                       : (it.estimated ? '<span class="badge badge-manual">fill in</span>'
                                       : '<span class="badge badge-ai">ai</span>')}
         </div>
-        <div class="grid grid-cols-5 gap-1.5 mt-2">
-          <div class="stepper" data-qty="${i}">
+        <div class="food-value-grid mt-2">
+          <div class="food-value"><span class="food-value-label">Amount (${esc(it.unit)})</span><div class="stepper" data-qty="${i}">
             <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
             <input class="stepper-input" type="number" step="0.1" value="${it.qty}" data-qty="${i}" aria-label="Quantity">
             <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
           </div>
-          <div class="stepper" data-mac="calories" data-i="${i}">
+          </div><div class="food-value"><span class="food-value-label">Calories (kcal)</span><div class="stepper" data-mac="calories" data-i="${i}">
             <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
             <input class="stepper-input" type="number" value="${it.calories}" data-mac="calories" data-i="${i}" aria-label="Calories">
             <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
           </div>
-          <div class="stepper" data-mac="protein" data-i="${i}">
+          </div><div class="food-value"><span class="food-value-label">Protein (g)</span><div class="stepper" data-mac="protein" data-i="${i}">
             <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
             <input class="stepper-input" type="number" value="${it.protein}" data-mac="protein" data-i="${i}" aria-label="Protein">
             <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
           </div>
-          <div class="stepper" data-mac="carbs" data-i="${i}">
+          </div><div class="food-value"><span class="food-value-label">Carbs (g)</span><div class="stepper" data-mac="carbs" data-i="${i}">
             <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
             <input class="stepper-input" type="number" value="${it.carbs}" data-mac="carbs" data-i="${i}" aria-label="Carbs">
             <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
           </div>
-          <div class="stepper" data-mac="fat" data-i="${i}">
+          </div><div class="food-value"><span class="food-value-label">Fat (g)</span><div class="stepper" data-mac="fat" data-i="${i}">
             <button class="stepper-btn" data-action="dec" aria-label="Decrease"><i data-lucide="minus" class="w-4 h-4"></i></button>
             <input class="stepper-input" type="number" value="${it.fat}" data-mac="fat" data-i="${i}" aria-label="Fat">
             <button class="stepper-btn" data-action="inc" aria-label="Increase"><i data-lucide="plus" class="w-4 h-4"></i></button>
           </div>
         </div>
-        <div class="text-[10px] text-slate-600 mt-1">qty · kcal · P · C · F</div>
+        </div>
       </div>
       <button class="icon-btn" data-rm="${i}"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
     </div>`).join('') + `
@@ -1585,7 +1601,9 @@ async function autoDetectWorkout(force = false) {
   setAIStatus('wk-detect-status', 'loading', 'Detecting workout muscles…');
   $('#wk-detect-retry').classList.add('hidden');
   try {
-    const r = await aiRequest('parse', {text});
+    let r=await aiRequest('parse.workout',{text});
+    if(!current())return;
+    if(!r.matched && !r.muscles?.length && !fallback.length)r=await aiRequest('parse',{text});
     if (!current()) return;
     if (r.kind === 'workout' || fallback.length) {
       const found = applyDetectedWorkout(r, text);
@@ -1718,7 +1736,8 @@ function bind() {
       if (it) {
         it.qty = parseFloat(t.value) || 0;
         recompute(it);
-        renderParsed();
+        $('#parsed-box').querySelectorAll('input[data-i="'+t.dataset.qty+'"][data-mac]').forEach(input=>{input.value=it[input.dataset.mac];});
+        setParsedTotals(totalOf(S.parsed));
       }
     }
   });
@@ -1922,12 +1941,12 @@ function bind() {
   $('#g-save').addEventListener('click', async () => {
     try {
       await api('goals.save', {
-        calories: $('#g-cal').value, protein: $('#g-pro').value,
+        bodyWeightKg: $('#g-weight').value, calories: $('#g-cal').value, protein: $('#g-pro').value,
         carbs: $('#g-carb').value, fat: $('#g-fat').value,
         studyMinutes: $('#g-study').value, monthBudget: $('#g-budget').value,
         currency: $('#g-currency').value.trim()
       });
-      ['#g-cal', '#g-pro', '#g-carb', '#g-fat', '#g-study', '#g-budget', '#g-currency'].forEach(id => delete $(id).dataset.touched);
+      ['#g-cal', '#g-pro', '#g-carb', '#g-fat', '#g-study', '#g-budget', '#g-weight', '#g-currency'].forEach(id => delete $(id).dataset.touched);
       toast('Goals updated');
       await load();
     } catch (e) { toast(e.message, 'err'); }
@@ -2002,7 +2021,7 @@ function bind() {
   });
 
   // goals inputs should stop render() from stomping on edits
-  ['#g-cal', '#g-pro', '#g-carb', '#g-fat', '#g-study', '#g-budget', '#g-currency']
+  ['#g-cal', '#g-pro', '#g-carb', '#g-fat', '#g-study', '#g-budget', '#g-weight', '#g-currency']
     .forEach(s => $(s).addEventListener('input', () => { $(s).dataset.touched = '1'; }));
 
   // notifications

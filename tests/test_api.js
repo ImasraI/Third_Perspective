@@ -37,7 +37,8 @@ function makeSandbox(opts) {
     'props' in opts ? opts.props : {}
   );
   const sheets = {};
-  const calls = { gemini: 0 };
+  const calls = { gemini: 0, sheetReads:0 };
+  const cacheStore={};
   const sent = [];
 
   function makeSheet(name) {
@@ -50,7 +51,7 @@ function makeSandbox(opts) {
         if (!this.rows.length) return 0;
         return this.rows[0].length;
       },
-      getDataRange() { const s = this; return { getValues: () => s.rows.slice() }; },
+      getDataRange() { calls.sheetReads++; const s = this; return { getValues: () => s.rows.slice() }; },
       appendRow(row) { this.rows.push(row.slice()); },
       deleteRow(r) { this.rows.splice(r - 1, 1); },
       setFrozenRows() {},
@@ -97,7 +98,7 @@ function makeSandbox(opts) {
       })
     },
     CacheService: {
-      getScriptCache: () => ({ get: () => null, put() {} })
+      getScriptCache: () => ({ get: k => opts.cache ? cacheStore[k] || null : null, put(k,v) {if(opts.cache)cacheStore[k]=v;}, remove(k){delete cacheStore[k];} })
     },
     ScriptApp: {
       getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/TEST/exec' }),
@@ -650,6 +651,31 @@ section('[14] daily assistant and persistent undo');
   check('old additions undo without disturbing newer entries',call(many,{action:'changes.undo',id:old.id}).ok && call(many,{action:'state'}).study.todayMinutes===102);
   const locked=makeSandbox({props:{APP_KEY:'private'}});
   check('undo requires backend authorization',!call(locked,{action:'changes.undo',id:'anything'}).ok);
+}
+
+
+section('[15] energy balance and fast reads');
+{
+  const sb=makeSandbox({cache:true});
+  call(sb,{action:'state'});const reads=sb.calls.sheetReads;call(sb,{action:'state'});
+  check('dashboard repeat read uses cache',sb.calls.sheetReads===reads);
+  const logged=call(sb,{action:'log.workout',name:'Fencing',exercises:'fencing',durationMin:30,muscles:['quads']});
+  const state=call(sb,{action:'state'});
+  check('30 minute fencing active calories exclude resting energy',state.workouts.todayBurned===184,JSON.stringify(state.workouts.today));
+  check('logged and dashboard energy estimates agree',logged.kcal===state.workouts.todayBurned);
+  check('writes invalidate cached dashboard',sb.calls.sheetReads>reads && state.workouts.today.length===1);
+  check('workout history includes burned calories',state.workouts.recent[0].kcal===184);
+  const edited=call(sb,{action:'edit.workout',rowId:2,durationMin:60});
+  check('duration edit recalculates energy',call(sb,{action:'state'}).workouts.todayBurned===368);
+  call(sb,{action:'changes.undo',id:edited.changeId});
+  check('undo restores energy and invalidates cached totals',call(sb,{action:'state'}).workouts.todayBurned===184);
+  call(sb,{action:'goals.save',bodyWeightKg:80});
+  check('bodyweight changes energy estimate',call(sb,{action:'state'}).workouts.todayBurned===210);
+  const fast=makeSandbox();call(fast,{action:'parse',text:'bench press 4x10'});
+  check('known workouts skip Gemini',fast.calls.gemini===0);
+  const food=makeSandbox({cache:true,geminiResponse:{kind:'food',foods:[{name:'egg',qty:1,unit:'egg',calories:72,protein:6,carbs:1,fat:5,refAmount:1,refUnit:'egg'}]}});
+  call(food,{action:'parse',text:'1 egg'});call(food,{action:'parse',text:'1 egg'});
+  check('repeated food text reuses Gemini response',food.calls.gemini===1);
 }
 
 console.log('\n=== ' + pass + ' passed, ' + fail + ' failed ===');

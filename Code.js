@@ -553,7 +553,7 @@ function parseWorkoutSegment(text, bodyweightKg) {
 
     // Energy: kcal/min = MET * 3.5 * bodyweightKg / 200
     const bw = bodyweightKg || 70;
-    const minutes = (sets * effectiveReps) / 60;
+    const minutes = isTime ? sets * it.seconds / 60 : sets * effectiveReps * 3 / 60;
     kcal += (def.met * 3.5 * bw / 200) * minutes;
 
     exercises.push({
@@ -834,20 +834,23 @@ function dispatch(req) {
     if (action !== 'ping' && action !== 'gemini.test' && !isAuthorized(req)) {
       return { ok: false, error: 'Unauthorized: bad or missing appKey' };
     }
+    requestBook=null;
     const handler = ROUTES[action];
     if (!handler) return { ok: false, error: 'Unknown action: ' + action };
-    const lock = typeof LockService !== 'undefined' ? LockService.getScriptLock() : null;
-    if (lock) lock.waitLock(30000);
-    try { return trackedWrite(action, req, function () { return handler(req); }); }
-    finally { if (lock) lock.releaseLock(); }
+    if (action === 'changes.undo') return withWriteLock(function(){return handler(req);});
+    if(action==='food.cache'){invalidateStateCache();try{return handler(req);}finally{invalidateStateCache();}}
+    return trackedWrite(action, req, function () { return handler(req); });
   } catch (err) {
     return { ok: false, error: String(err && err.message ? err.message : err) };
   }
 }
 
+let requestBook = null;
+function activeBook(){return requestBook || (requestBook=SpreadsheetApp.getActiveSpreadsheet());}
+
 const ROUTES = {
   'ping': function () { return { ok: true, pong: true, now: new Date().toISOString() }; },
-  'state': getState,
+  'state': cachedState,
   'parse': parseAction,
   'parse.workout': function (r) { return parseWorkoutAction(r); },
   'parse.image': function (r) { return visionAction(r); },
@@ -1033,6 +1036,8 @@ function workoutState() {
       muscles: muscles,
       load: storedLoad
     };
+    const energy=workoutEnergy(rec);
+    rec.kcal=energy.active;rec.grossKcal=energy.gross;rec.energyMethod=energy.method;
 
     // Old rows have no stored load. Rather than show them as untrained, derive
     // an estimate from the raw exercise text so history still colours correctly.
@@ -1086,6 +1091,7 @@ function workoutState() {
     recent: recent,
     muscleStatus: muscleStatus,
     effort: effort,
+    todayBurned: todayList.reduce(function(sum,w){return sum+w.kcal;},0),
     weeklyLoad: round1(kcal7)
   };
 }
@@ -1098,13 +1104,13 @@ function workoutState() {
 const ASSISTANT_ACTIONS = {
   'edit.entry': function (p) { return summariseEdit(editEntry(p), p); },
   'log.food': function (p) {
-    const r = logFood({ items: p.items, source: p.source || 'Assistant' });
+    const r = logFood({ items: p.items, source: p.source || 'Assistant', minimal:true });
     return r.ok ? summarise(r, 'Logged food: ' + (p.items || []).map(function(i){return i.qty+' '+i.unit+' '+i.name+' ('+num(i.calories)+' kcal, '+num(i.protein)+' g protein, '+num(i.carbs)+' g carbs, '+num(i.fat)+' g fat)';}).join('; ')) : r;
   },
   'log.workout': function (p) {
     const r = logWorkout({
       name: p.name, exercises: p.exercises,
-      durationMin: num(p.durationMin), muscles: p.muscles
+      durationMin: num(p.durationMin), muscles: p.muscles, minimal:true
     });
     if (!r.ok) return r;
     const parts = [];
@@ -1119,23 +1125,23 @@ const ASSISTANT_ACTIONS = {
     return summarise(r, 'Logged workout' + (parts.length ? ': ' + parts.join(' | ') : ''));
   },
   'log.expense': function (p) {
-    const r = logExpense({ amount: p.amount, category: p.category, merchant: p.merchant, notes: p.notes });
+    const r = logExpense({ amount: p.amount, category: p.category, merchant: p.merchant, notes: p.notes, minimal:true });
     return r.ok ? summarise(r, 'Logged ' + num(p.amount) + ' ' + (p.category || 'expense')) : r;
   },
   'log.study': function (p) {
-    const r = logStudy({ subject: p.subject, minutes: num(p.minutes), notes: p.notes });
+    const r = logStudy({ subject: p.subject, minutes: num(p.minutes), notes: p.notes, minimal:true });
     return r.ok ? summarise(r, 'Logged ' + num(p.minutes) + ' min study: ' + (p.subject || 'Study')) : r;
   },
   'add.task': function (p) {
-    const r = addTask({ task: p.task, due: p.due, priority: p.priority });
+    const r = addTask({ task: p.task, due: p.due, priority: p.priority, minimal:true });
     return r.ok ? summarise(r, 'Added task: ' + p.task) : r;
   },
   'toggle.task': function (p) {
-    const r = toggleTask({ rowId: num(p.rowId) });
+    const r = toggleTask({ rowId: num(p.rowId), minimal:true });
     return r.ok ? summarise(r, 'Updated task #' + num(p.rowId)) : r;
   },
   'add.class': function (p) {
-    const r = addClass({ day: p.day, time: p.time, subject: p.subject, room: p.room, notes: p.notes });
+    const r = addClass({ day: p.day, time: p.time, subject: p.subject, room: p.room, notes: p.notes, minimal:true });
     return r.ok ? summarise(r, 'Added class: ' + (p.subject || p.day)) : r;
   },
   'save.goals': function (p) {
@@ -1154,8 +1160,7 @@ function summarise(result, message) {
     ok: true,
     message: message,
     rowId: result.rowId,
-    nutrition: result.today ? nutritionState().today : undefined,
-    state: getState()
+    nutrition: undefined,
   };
 }
 
@@ -1207,7 +1212,7 @@ const ASSISTANT_SCHEMA = {
           room: { type: 'string' },
           sheet: { type: 'string' },
           fields: { type: 'object', properties: { food: {type:'string'}, qty:{type:'number'}, unit:{type:'string'}, calories:{type:'number'}, protein:{type:'number'}, carbs:{type:'number'}, fat:{type:'number'}, name:{type:'string'}, exercises:{type:'string'}, durationMin:{type:'number'}, muscles:{type:'array',items:{type:'string',enum:MUSCLES}}, amount:{type:'number'}, category:{type:'string'}, merchant:{type:'string'}, notes:{type:'string'}, subject:{type:'string'}, minutes:{type:'number'}, task:{type:'string'}, due:{type:'string'}, priority:{type:'string'}, status:{type:'string',enum:['Pending','Completed']}, day:{type:'string'}, time:{type:'string'}, room:{type:'string'} } },
-          goals: { type: 'object', properties: {calories:{type:'number'},protein:{type:'number'},carbs:{type:'number'},fat:{type:'number'},studyMinutes:{type:'number'},monthBudget:{type:'number'},currency:{type:'string'}} }
+          goals: { type: 'object', properties: {calories:{type:'number'},protein:{type:'number'},carbs:{type:'number'},fat:{type:'number'},studyMinutes:{type:'number'},monthBudget:{type:'number'},bodyWeightKg:{type:'number'},currency:{type:'string'}} }
         },
         required: ['action']
       }
@@ -1227,8 +1232,13 @@ function assistantAction(req) {
   }
 
   const history = Array.isArray(req.history) ? req.history.slice(-8) : [];
+  const context=withWriteLock(function(){
+    const text=stateForAssistant(),rows={};
+    [SHEETS.NUTRITION,SHEETS.WORKOUTS,SHEETS.EXPENSES,SHEETS.STUDY,SHEETS.TASKS,SHEETS.CLASSES].forEach(function(name){rows[name]=serialRows(name);});
+    return {text:text,rows:rows};
+  });
   const prompt =
-    assistantSystemPrompt(stateForAssistant()) +
+    assistantSystemPrompt(context.text) +
     '\n\nCONVERSATION SO FAR:\n' +
     (history.length
       ? history.map(function (h) { return (h.role === 'assistant' ? 'Assistant: ' : 'User: ') + String(h.text || '').slice(0, 6000); }).join('\n')
@@ -1265,7 +1275,7 @@ function assistantAction(req) {
   actions.forEach(function(a){
     const panel=a.sheet || (a.action==='toggle.task'?SHEETS.TASKS:null);
     if(panel && a.rowId!==undefined && [SHEETS.NUTRITION,SHEETS.EXPENSES,SHEETS.WORKOUTS,SHEETS.STUDY,SHEETS.TASKS,SHEETS.CLASSES].indexOf(panel)>=0){
-      a._panel=panel;a._target=serialRows(panel)[num(a.rowId)-2];
+      a._panel=panel;a._target=context.rows[panel][num(a.rowId)-2];
     }
   });
   if(actions.length>30)failures.push('Only the first 30 changes were processed. Send the remaining entries separately.');
@@ -1274,12 +1284,6 @@ function assistantAction(req) {
     if (!fn) { failures.push('Unsupported action: ' + a.action); return; }
     try {
       validateAssistantWrite(a);
-      if(a._panel){
-        if(!a._target)throw new Error('Entry not found');
-        const found=[];serialRows(a._panel).forEach(function(row,i){if(JSON.stringify(row)===JSON.stringify(a._target))found.push(i+2);});
-        if(found.length!==1)throw new Error('Entry changed or is ambiguous; identify the entry again');
-        a.rowId=found[0];
-      }
       const route = { 'add.task': 'task.add', 'toggle.task': 'task.toggle', 'add.class': 'class.add', 'save.goals': 'goals.save', 'delete': 'entry.delete', 'edit.entry': 'entry.edit' }[a.action] || a.action;
       const r = trackedWrite(route, a, function () { return fn(a); }, 'Chat');
       if (r && r.ok) applied.push(r.message);
@@ -1332,6 +1336,7 @@ function stateForAssistant() {
     'Logged today: ' + s.nutrition.recent.length + ' food entries.',
     'Spending this month: ' + s.expenses.monthTotal + ' ' + s.goals.currency + ' of ' + s.goals.monthBudget + '.',
     'Study today: ' + s.study.todayMinutes + ' min (goal ' + s.goals.studyMinutes + ').',
+    'Active exercise calories today (estimate): '+num(w.todayBurned)+'. Net food calories: '+(s.nutrition.today.calories-num(w.todayBurned))+'.',
     'Workouts today: ' + w.today.length + ', recent: ' + w.recent.length + '.',
     'Muscle effort: ' + (effortLines.length ? effortLines.join('; ') : 'nothing trained yet'),
     'Tasks: ' + (tasks.length ? tasks.join(' | ') : 'none'),
@@ -1573,7 +1578,9 @@ function classState() {
 function parseAction(req) {
   const text = String(req.text || '').trim();
   if (!text) return { ok: false, error: 'Nothing to parse' };
-  if (getGeminiKey()) return parseWithGemini(text);
+  const local=parseWorkoutAction({text:text});
+  if(local.matched && !/\b(ate|eaten|breakfast|lunch|dinner|spent|bought|studied)\b/i.test(text))return local;
+  if (getGeminiKey()) return cachedFoodParse(text);
   return { ok: true, source: 'local', ...parseLocally(text) };
 }
 
@@ -1996,6 +2003,7 @@ function geminiRequest(model, key, parts, schema, opts) {
       responseMimeType: opts.raw ? undefined : 'application/json',
       temperature: opts.temperature === undefined ? 0.1 : opts.temperature,
       maxOutputTokens: opts.maxOutputTokens,
+      thinkingConfig: /^gemini-3[.\-]/.test(model) ? {thinkingLevel:'low'} : undefined,
       responseSchema: opts.raw ? undefined : schema
     }
   };
@@ -2297,7 +2305,7 @@ function logExpense(req) {
   const now = new Date();
   const rowId = append(SHEETS.EXPENSES, [now, todayStr(), amount,
     req.category || 'Miscellaneous', req.merchant || '', req.source || 'Manual', req.notes || '']);
-  return { ok: true, rowId: rowId, state: expenseState(getGoals()) };
+  return { ok: true, rowId: rowId, state: req.minimal ? undefined : expenseState(getGoals()) };
 }
 
 function logWorkout(req) {
@@ -2313,7 +2321,7 @@ function logWorkout(req) {
   const load = (clientLoad && Object.keys(clientLoad).length) ? clientLoad : parsed.load;
   const finalMuscles = parsed.muscles.length ? parsed.muscles : muscles;
   const duration = num(req.durationMin) || parsed.durationMin || 0;
-  const kcal = parsed.kcal || 0;
+  const kcal = workoutEnergy({name:req.name,exercises:req.exercises,durationMin:duration},parsed).active;
 
   const now = new Date();
   const row = [now, todayStr(), req.name || 'Workout', req.exercises || '',
@@ -2328,7 +2336,7 @@ function logWorkout(req) {
     exercises: parsed.exercises,
     load: load,
     kcal: kcal,
-    state: workoutState()
+    state: req.minimal ? undefined : workoutState()
   };
 }
 
@@ -2343,7 +2351,7 @@ function logStudy(req) {
   if (!mins) return { ok: false, error: 'Minutes required' };
   const now = new Date();
   const rowId = append(SHEETS.STUDY, [now, todayStr(), req.subject || 'Study', mins, req.notes || '']);
-  return { ok: true, rowId: rowId, todayMinutes: studyState().todayMinutes };
+  return { ok: true, rowId: rowId, todayMinutes: req.minimal ? undefined : studyState().todayMinutes };
 }
 
 /**
@@ -2390,7 +2398,7 @@ function editWorkout(req) {
 function addTask(req) {
   if (!req.task) return { ok: false, error: 'Task text required' };
   const rowId = append(SHEETS.TASKS, [todayStr(), req.task, req.due || '', 'Pending', '', req.priority || 'Normal']);
-  return { ok: true, rowId: rowId, tasks: taskState() };
+  return { ok: true, rowId: rowId, tasks: req.minimal ? undefined : taskState() };
 }
 
 function toggleTask(req) {
@@ -2400,13 +2408,13 @@ function toggleTask(req) {
   const done = sheet.getRange(row, 4).getValue() === 'Completed';
   sheet.getRange(row, 4).setValue(done ? 'Pending' : 'Completed');
   sheet.getRange(row, 5).setValue(done ? '' : todayStr());
-  return { ok: true, tasks: taskState() };
+  return { ok: true, tasks: req.minimal ? undefined : taskState() };
 }
 
 function addClass(req) {
   if (!req.subject) return { ok: false, error: 'Subject required' };
   const rowId = append(SHEETS.CLASSES, [req.day || 'Monday', req.time || '', req.subject, req.room || '', req.notes || '']);
-  return { ok: true, rowId: rowId, classes: classState() };
+  return { ok: true, rowId: rowId, classes: req.minimal ? undefined : classState() };
 }
 
 function deleteRow(sheetName, rowId) {
@@ -2424,6 +2432,7 @@ function deleteEntry(req) {
 }
 
 function saveGoals(req) {
+  if(req.bodyWeightKg!==undefined && (!Number.isFinite(Number(req.bodyWeightKg))||Number(req.bodyWeightKg)<=0||Number(req.bodyWeightKg)>500))return {ok:false,error:'Body weight must be between 0 and 500 kg.'};
   const goals = getGoals();
   const next = {
     calories: num(req.calories) || goals.calories,
@@ -2432,6 +2441,7 @@ function saveGoals(req) {
     fat: num(req.fat) || goals.fat,
     studyMinutes: num(req.studyMinutes) || goals.studyMinutes,
     monthBudget: num(req.monthBudget) || goals.monthBudget,
+    bodyWeightKg: num(req.bodyWeightKg) || goals.bodyWeightKg || CONFIG.DEFAULT_BODY_WEIGHT_KG,
     currency: req.currency || goals.currency
   };
   PropertiesService.getScriptProperties().setProperty(KEYS.GOALS, JSON.stringify(next));
@@ -2447,6 +2457,7 @@ function getGoals() {
     fat: CONFIG.DAILY_FAT_GOAL,
     studyMinutes: CONFIG.DAILY_STUDY_GOAL_MIN,
     monthBudget: CONFIG.MONTHLY_SPEND_BUDGET,
+    bodyWeightKg: CONFIG.DEFAULT_BODY_WEIGHT_KG,
     currency: CONFIG.CURRENCY_SYMBOL
   };
   if (!raw) return base;
@@ -2458,8 +2469,8 @@ function getGoals() {
 // ============================================================================
 
 function getSheet(name) {
-  let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
-  if (!sheet) { setupSheets(); sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name); }
+  let sheet = activeBook().getSheetByName(name);
+  if (!sheet) { setupSheets(); sheet = activeBook().getSheetByName(name); }
   return sheet;
 }
 
@@ -2654,7 +2665,7 @@ function logFood(req) {
   });
   SpreadsheetApp.flush();
 
-  return { ok: true, logged: items.length, items: items, today: nutritionState().today };
+  return { ok: true, logged: items.length, items: items, today: req.minimal ? undefined : nutritionState().today };
 }
 
 /**
@@ -2685,7 +2696,7 @@ function editFood(req) {
   });
   SpreadsheetApp.flush();
 
-  return { ok: true, rowId: row, today: nutritionState().today };
+  return { ok: true, rowId: row, today: req.minimal ? undefined : nutritionState().today };
 }
 
 /**
@@ -2757,16 +2768,19 @@ function detectCategory(text) {
 // Persistent reversible changes. Match row contents rather than shifting sheet row numbers.
 const CHANGE_SHEET = 'Change History';
 function journalSheet() {
-  const book = SpreadsheetApp.getActiveSpreadsheet();
+  const book = activeBook();
   let sheet = book.getSheetByName(CHANGE_SHEET);
   if (!sheet) { sheet = book.insertSheet(CHANGE_SHEET); sheet.appendRow(['ID','Time','Panel','Summary','Patch','Undone']); }
   return sheet;
 }
 function changeHistory(req) {
   req=req || {};
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CHANGE_SHEET);
+  const sheet = activeBook().getSheetByName(CHANGE_SHEET);
   if (!sheet) return [];
-  return sheet.getDataRange().getValues().slice(1).reverse().slice(Math.max(0,num(req.offset)),Math.max(0,num(req.offset))+100).map(function(r) {
+  const last=sheet.getLastRow()-Math.max(0,num(req.offset));
+  if(last<2)return [];
+  const first=Math.max(2,last-99);
+  return sheet.getRange(first,1,last-first+1,6).getValues().reverse().map(function(r) {
     return {id:r[0],time:r[1],panel:r[2],summary:r[3],undone:!!r[5]};
   });
 }
@@ -2782,13 +2796,32 @@ function subtractRows(a,b) {
   const pool = b.map(JSON.stringify);
   return a.filter(function(r) { const i=pool.indexOf(JSON.stringify(r)); if(i<0)return true; pool.splice(i,1); return false; });
 }
+function withWriteLock(fn){
+  const lock=typeof LockService!=='undefined'?LockService.getScriptLock():null;
+  if(lock)lock.waitLock(30000);
+  try{return fn();}finally{if(lock)lock.releaseLock();}
+}
 function trackedWrite(action, req, fn, source) {
+  if(!writePanel(action,req))return fn();
+  return withWriteLock(function(){
+    if(req._panel){
+      if(!req._target)throw new Error('Entry not found');
+      const found=[];serialRows(req._panel).forEach(function(row,i){if(JSON.stringify(row)===JSON.stringify(req._target))found.push(i+2);});
+      if(found.length!==1)throw new Error('Entry changed or is ambiguous; identify the entry again');
+      req.rowId=found[0];
+    }
+    return trackedWriteLocked(action,req,fn,source);
+  });
+}
+function trackedWriteLocked(action, req, fn, source) {
   const panel=writePanel(action,req);
   if (!panel) return fn();
   const before=panel==='Goals'?getGoals():serialRows(panel);
   // Ensure history exists before attempting a data mutation.
   const journal=journalSheet();
+  invalidateStateCache();
   const result=fn();
+  invalidateStateCache();
   const after=panel==='Goals'?getGoals():serialRows(panel);
   if (JSON.stringify(before)!==JSON.stringify(after)) {
     const patch=panel==='Goals'?{before:before,after:after}:{removed:subtractRows(before,after),added:subtractRows(after,before)};
@@ -2826,6 +2859,7 @@ function undoChange(req) {
       patch.removed.forEach(function(r){sheet.appendRow(r.map(restoreCell));});
     }
   }
+  invalidateStateCache();
   journal.getRange(index+1,6).setValue(new Date().toISOString());
   return {ok:true,state:getState()};
 }
@@ -2855,4 +2889,33 @@ function validateAssistantWrite(a) {
     a.items.forEach(function(i){if(!i.name || !Number.isFinite(i.qty)||i.qty<=0)throw new Error('Food name and quantity required');['calories','protein','carbs','fat'].forEach(function(k){if(!Number.isFinite(i[k])||i[k]<0)throw new Error('Invalid food '+k);});});
   }
   if(a.action==='save.goals')Object.keys(a.goals || {}).forEach(function(k){if(k!=='currency'&&(!Number.isFinite(a.goals[k])||a.goals[k]<=0))throw new Error('Invalid goal '+k);});
+}
+
+
+// Exercise energy is an estimate of active expenditure above resting metabolism.
+function workoutEnergy(rec, parsed) {
+  const bw=bodyWeightKg();
+  parsed=parsed || parseWorkoutLine(rec.exercises || rec.name || '',bw);
+  const exercises=parsed.exercises || [];
+  let weighted=0, minutes=0;
+  exercises.forEach(function(e){const min=e.seconds?num(e.seconds)*Math.max(1,num(e.sets))/60:Math.max(1,num(e.sets))*Math.max(1,num(e.reps))*3/60;weighted+=num(e.met)*min;minutes+=min;});
+  const duration=num(rec.durationMin) || minutes;
+  const met=minutes?weighted/minutes:3.5;
+  if(!duration)return {active:0,gross:0,method:'duration needed'};
+  return {active:Math.round(Math.max(0,met-1)*3.5*bw/200*duration),gross:Math.round(met*3.5*bw/200*duration),method:exercises.length?'activity MET estimate':'general workout estimate'};
+}
+function invalidateStateCache(){const cache=CacheService.getScriptCache();if(cache.remove)cache.remove('dashboard-v3');}
+function cachedState(){return withWriteLock(readCachedState);}
+function readCachedState(){
+  const cache=CacheService.getScriptCache();const raw=cache.get('dashboard-v3');
+  if(raw){try{const data=JSON.parse(raw);if(data.today===todayStr())return data;}catch(e){}}
+  const state=getState(),json=JSON.stringify(state);if(json.length<90000)cache.put('dashboard-v3',json,10);return state;
+}
+function cachedFoodParse(text){
+  const cache=CacheService.getScriptCache();
+  const key=text.length<200?'food-v3:'+text.toLowerCase().trim():null;
+  if(key){const raw=cache.get(key);if(raw){try{return Object.assign(JSON.parse(raw),{cached:true});}catch(e){}}}
+  const result=parseWithGemini(text);
+  if(key && result.ok && result.source==='gemini' && result.kind==='food')cache.put(key,JSON.stringify(result),900);
+  return result;
 }

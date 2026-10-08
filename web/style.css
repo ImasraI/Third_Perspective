@@ -823,3 +823,8 @@ button:disabled { opacity: .55; cursor: default; }
 .ai-state-dot { flex-shrink: 0; width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
 @keyframes ai-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ai-spinner { animation: none; } }
+
+.food-value-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 10px; }
+.food-value-label { display: block; font-size: 11px; color: #cac3b8; margin-bottom: 5px; }
+.calorie-burn-offset { position: absolute; top: 0; height: 100%; background: #79b8e8; transition: width .7s, left .7s; }
+.workout-energy { display: block; color: #79b8e8; margin-top: 5px; }

@@ -321,6 +321,31 @@ async function main() {
     assert.equal(run('CHAT.recording'),false);assert.equal(get('chat-mic').getAttribute('aria-pressed'),'false');
   });
 
+
+  run('S.parsed=[makeItem("egg",1,"egg",{calories:72,protein:6,carbs:1,fat:5},1,"egg")];renderParsed()');
+  const qty=get('parsed-box').querySelector('input[data-qty]');qty.focus();
+  qty.value='12';qty.dispatchEvent(new w.Event('input',{bubbles:true}));
+  qty.value='123';qty.dispatchEvent(new w.Event('input',{bubbles:true}));
+  test('typing quantity keeps the same input and keyboard focus',()=>{
+    assert.equal(w.document.activeElement,qty);assert.equal(get('parsed-box').querySelector('input[data-qty]'),qty);
+    assert.equal(run('S.parsed[0].qty'),123);assert.equal(get('parsed-box').querySelector('input[data-mac="calories"]').value,'8856');
+  });
+  test('food editor visibly labels every quantity and macro field',()=>{
+    const labels=Array.from(get('parsed-box').querySelectorAll('.food-value-label')).map(el=>el.textContent);
+    assert.deepEqual(labels,['Amount (egg)','Calories (kcal)','Protein (g)','Carbs (g)','Fat (g)']);
+  });
+  run('renderRings({nutrition:{today:{calories:1500,protein:60,carbs:120,fat:40}},goals:{calories:2000,protein:140},workouts:{todayBurned:300,today:[]},expenses:{monthTotal:0,monthBudget:100,todayTotal:0}})');
+  test('calorie balance shows food minus exercise and blue offset',()=>{
+    assert.equal(get('center-cal').textContent,'800');assert.equal(get('bar-cal').style.width,'60%');
+    assert.equal(get('bar-cal-burn').style.width,'15%');assert.equal(get('bar-cal-burn').style.left,'60%');
+    assert.match(get('calorie-balance').textContent,/1,500 food − 300 exercise = 1,200 net/);
+    assert.equal(get('ring-calorie-burn').style.opacity,'1');
+  });
+  run('renderRings({nutrition:{today:{calories:100,protein:0,carbs:0,fat:0}},goals:{calories:2000,protein:140},workouts:{todayBurned:300,today:[]},expenses:{monthTotal:0,monthBudget:100,todayTotal:0}})');
+  test('exercise exceeding intake keeps valid ring and negative net',()=>{
+    assert.equal(get('bar-cal').style.width,'0%');assert.equal(get('center-cal').textContent,'2,200');assert.match(get('calorie-balance').textContent,/-200 net/);
+  });
+
   const events = {};
   const sw = { URL, Promise, self: { location: { origin: 'https://example.com' }, addEventListener: (type, fn) => events[type] = fn } };
   vm.runInNewContext(fs.readFileSync(path.join(web, 'sw.js'), 'utf8'), sw);

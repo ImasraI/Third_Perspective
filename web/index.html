@@ -117,6 +117,7 @@
             <svg class="w-52 h-52 md:w-60 md:h-60 -rotate-90" viewBox="0 0 200 200">
               <circle cx="100" cy="100" r="82" class="stroke-slate-800" stroke-width="12" fill="none"/>
               <circle id="ring-calorie" cx="100" cy="100" r="82" class="ring-circle stroke-brand-orange" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="515" stroke-dashoffset="515"/>
+              <circle id="ring-calorie-burn" cx="100" cy="100" r="82" stroke="#79b8e8" stroke-width="12" fill="none" opacity="0" />
               <circle cx="100" cy="100" r="64" class="stroke-slate-800" stroke-width="12" fill="none"/>
               <circle id="ring-protein" cx="100" cy="100" r="64" class="ring-circle stroke-brand-cyan" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="402" stroke-dashoffset="402"/>
               <circle cx="100" cy="100" r="46" class="stroke-slate-800" stroke-width="12" fill="none"/>
@@ -141,11 +142,14 @@
                 <span class="text-slate-300 flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-brand-orange"></span> Calories</span>
                 <span class="font-mono text-white"><span id="stat-cal">0</span> / <span id="goal-cal">2000</span> kcal</span>
               </div>
-              <div class="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
+              <div class="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden relative">
+                <div id="bar-cal-burn" class="calorie-burn-offset"></div>
                 <div id="bar-cal" class="bg-gradient-to-r from-orange-600 to-brand-orange h-full rounded-full transition-all duration-700" style="width:0%"></div>
               </div>
             </div>
 
+            <p id="calorie-balance" class="text-xs text-slate-400"></p>
+            <p class="text-xs text-slate-400">Orange: net calories · Blue: exercise subtracted (estimate)</p>
             <div class="space-y-1.5">
               <div class="flex justify-between text-sm">
                 <span class="text-slate-300 flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-brand-cyan"></span> Protein</span>
@@ -797,6 +801,7 @@
           <div><label class="label">Carbs (g)</label><input id="g-carb" type="number" class="field" /></div>
           <div><label class="label">Fat (g)</label><input id="g-fat" type="number" class="field" /></div>
           <div><label class="label">Study (min)</label><input id="g-study" type="number" class="field" /></div>
+          <div><label class="label" for="g-weight">Body weight (kg) · exercise estimates</label><input id="g-weight" type="number" min="1" step="0.1" class="field" value="70" /></div>
           <div><label class="label">Month budget</label><input id="g-budget" type="number" class="field" /></div>
         </div>
         <div>
