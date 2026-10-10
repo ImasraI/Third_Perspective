@@ -1324,6 +1324,16 @@ async function estimateWorkoutMuscles() {
   setAIStatus('wk-ai-status', 'loading', 'Estimating muscles from your photo…');
   $('#wk-estimate').disabled = true;
   try {
+    if (!S.workoutPhoto) {
+      if (!hint) {
+        setAIStatus('wk-ai-status','empty','Enter a workout or attach a training photo first.');
+        return;
+      }
+      await autoDetectWorkout(true);
+      const status=$('#wk-detect-status');
+      setAIStatus('wk-ai-status',status.dataset.state || 'empty',status.textContent);
+      return;
+    }
     const r = await aiRequest('parse.workout.image', { image: S.workoutPhoto, hint: hint });
     if (!r.ok || r.recognised === false || (!r.muscles?.length && !r.effort?.length)) {
       setAIStatus('wk-ai-status', 'empty', r.note || 'No muscle targets found in this photo.');

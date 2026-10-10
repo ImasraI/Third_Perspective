@@ -1612,6 +1612,39 @@ function parseWorkoutAction(req) {
 }
 
 /**
+ * Vision schema for WORKOUT photos.
+ *
+ * Gemini enforces responseSchema, so the shape has to describe what the prompt
+ * asks for. This endpoint used to borrow VISION_SCHEMA (the food one), which has
+ * no muscles or effort at all: the model saw the training photo correctly and
+ * was then forced to answer in the food shape, so every workout photo came back
+ * as "no muscle targets found" no matter how clear the shot was.
+ */
+const WORKOUT_VISION_SCHEMA = {
+  type: 'object',
+  properties: {
+    recognised: { type: 'boolean' },
+    confidence: { type: 'number' },
+    // Shown when the photo is unusable, so the user knows what went wrong.
+    problem: { type: 'string', enum: ['none', 'unclear', 'not_training'] },
+    exercises: { type: 'array', items: { type: 'string' } },
+    // Only the canonical groups, so the body map can colour them directly.
+    muscles: { type: 'array', items: { type: 'string', enum: MUSCLES } },
+    // How hard each targeted muscle was trained: 0 (untrained) to 4 (maximal).
+    effort: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { muscle: { type: 'string', enum: MUSCLES }, level: { type: 'number' } },
+        required: ['muscle', 'level']
+      }
+    },
+    note: { type: 'string' }
+  },
+  required: ['recognised', 'confidence', 'muscles', 'effort']
+};
+
+/**
  * Vision estimate of a WORKOUT photo: muscle groups worked + how hard each was
  * trained + a rough overall intensity. The prompt is deliberately about
  * effort/muscles, NOT nutrition (that is parse.image's job).
@@ -1641,23 +1674,21 @@ function parseWorkoutImage(req) {
     '   stabilisers and the grip/forearms when gripping something.\n' +
     '4. If the photo is just a person stretching or walking, set recognised=false\n' +
     '   and leave muscles empty. Do NOT guess a generic "gym session".\n' +
-    '5. `effort` uses the canonical muscle names: neck, traps, front-delts,\n' +
-    '   side-delts, rear-delts, chest, back, biceps, triceps, forearms, abs,\n' +
-    '   obliques, lower-back, glutes, quads, hamstrings, calves.\n' +
+    '5. Use only these canonical muscle names: '+MUSCLES.join(', ')+'.\n' +
     '6. `confidence` is 0..1 for how sure you are about the muscle/effort split.\n' +
     (hint ? '\nThe user added this context: ' + hint + '\n' : '') +
     '\nReturn JSON only.';
 
   const res = callGeminiParts(
     [{ inline_data: { mime_type: image.mimeType, data: image.base64 } }, { text: prompt }],
-    VISION_SCHEMA
+    WORKOUT_VISION_SCHEMA
   );
   if (!res.ok) return { ok: false, error: res.error };
 
   const d = res.data || {};
   // A failure means the photo is not a clear training shot (stretching, walking,
   // non-human). Report it honestly rather than inventing muscles.
-  if (d.recognised === false || !d.muscles || !d.muscles.length) {
+  if (d.recognised === false || (!(d.muscles || []).length && !(d.effort || []).length)) {
     return {
       ok: true,
       recognised: false,
@@ -1670,18 +1701,12 @@ function parseWorkoutImage(req) {
     };
   }
 
-  // Normalise legacy muscle words (shoulders -> the three delt heads) to match
-  // the app's canonical list.
-  const muscles = [];
+  // Preserve every canonical target, including all heads of legacy "shoulders".
+  const muscles = normaliseMuscles((d.muscles || []).concat((d.effort || []).map(function(e){return e.muscle;})));
   const effort = [];
-  (d.muscles || []).forEach(function (m) {
-    const canonical = expandMuscles([m])[0] || String(m).trim().toLowerCase();
-    if (muscles.indexOf(canonical) === -1) muscles.push(canonical);
-  });
-  (d.effort || []).forEach(function (e) {
-    const level = Math.max(0, Math.min(4, Number(e.level) || 0));
-    const m = expandMuscles([e.muscle || ''])[0] || String(e.muscle || '').trim().toLowerCase();
-    if (m) effort.push({ muscle: m, level: level });
+  (d.effort || []).forEach(function(e){
+    const level=Math.max(0,Math.min(4,Number(e.level)||0));
+    normaliseMuscles([e.muscle]).forEach(function(m){effort.push({muscle:m,level:level});});
   });
 
   return {
